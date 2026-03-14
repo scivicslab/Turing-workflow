@@ -1,0 +1,23 @@
+name: MainSetupWorkflow
+
+steps:
+  - states: ["0", "1"]
+    label: main-setup-init
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["main-init"]
+
+  - states: ["1", "2"]
+    label: main-setup-run
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["main-run"]
+
+  - states: ["2", "end"]
+    label: main-setup-cleanup
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["main-cleanup"]

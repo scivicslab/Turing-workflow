@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workflow name="arguments-list-format-workflow">
+    <steps>
+        <transition from="0" to="1">
+            <action actor="math" method="add">
+                <arguments>
+                    <arg>10</arg>
+                    <arg>5</arg>
+                </arguments>
+            </action>
+        </transition>
+
+        <transition from="1" to="2">
+            <action actor="math" method="multiply">
+                <arguments>
+                    <arg>3</arg>
+                    <arg>4</arg>
+                </arguments>
+            </action>
+        </transition>
+
+        <transition from="2" to="end">
+            <action actor="math" method="getLastResult">
+                <arguments/>
+            </action>
+        </transition>
+    </steps>
+</workflow>

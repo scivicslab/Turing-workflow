@@ -1,0 +1,14 @@
+apiVersion: pojoactor.scivicslab.com/v1
+kind: OverlayConf
+
+bases:
+  - ../../base
+
+patches:
+  - target: main-workflow.yaml
+    patch: patch-main.yaml
+  - target: setup.yaml
+    patch: patch-setup.yaml
+
+vars:
+  environment: targeted

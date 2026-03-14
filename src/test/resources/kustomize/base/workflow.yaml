@@ -1,0 +1,16 @@
+name: SubWorkflow
+
+steps:
+  - states: ["0", "1"]
+    label: step-one
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["sub-step-1"]
+
+  - states: ["1", "end"]
+    label: step-two
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["sub-step-2"]

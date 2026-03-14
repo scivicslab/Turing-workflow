@@ -1,0 +1,27 @@
+name: MainWorkflow
+
+steps:
+  # Overwrite init to use json accumulator
+  - label: init
+    actions:
+      - actor: nodeGroup
+        method: createAccumulator
+        arguments:
+          - json
+
+  # Overwrite create-nodes to use webservers group
+  - label: create-nodes
+    actions:
+      - actor: nodeGroup
+        method: createNodeActors
+        arguments:
+          - webservers
+
+  # Insert new transition after create-nodes
+  - states: ["1.5", "2"]
+    label: setup-logging
+    actions:
+      - actor: logger
+        method: setLevel
+        arguments:
+          - INFO

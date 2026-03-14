@@ -1,0 +1,28 @@
+name: MainWorkflow
+
+steps:
+  - states: ["0", "1"]
+    label: init
+    actions:
+      - actor: nodeGroup
+        method: createAccumulator
+        arguments:
+          - streaming
+
+  - states: ["1", "2"]
+    label: create-nodes
+    actions:
+      - actor: nodeGroup
+        method: createNodeActors
+        arguments:
+          - local
+
+  - states: ["2", "end"]
+    label: run-tasks
+    actions:
+      - actor: nodeGroup
+        method: apply
+        arguments:
+          actor: "node-*"
+          method: runWorkflow
+          arguments: ["task.yaml"]

@@ -1,0 +1,19 @@
+name: nested-arguments-workflow
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: config
+        method: applyConfig
+        arguments:
+          - targetGroup: webservers
+            config:
+              nginx:
+                port: 8080
+                ssl: true
+              php:
+                version: "8.2"
+  - states: ["1", "end"]
+    actions:
+      - actor: config
+        method: getStatus
+        arguments: []

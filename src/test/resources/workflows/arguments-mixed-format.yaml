@@ -1,0 +1,22 @@
+name: arguments-mixed-format-workflow
+steps:
+  # Using string format (single argument wrapped as string, not array)
+  - states: ["0", "1"]
+    actions:
+      - actor: math
+        method: greet
+        arguments: "Alice"  # String format (no brackets)
+
+  # Using array format (multiple arguments)
+  - states: ["1", "2"]
+    actions:
+      - actor: math
+        method: add
+        arguments: ["10", "5"]  # Array format
+
+  # Using empty string (no arguments)
+  - states: ["2", "end"]
+    actions:
+      - actor: math
+        method: getLastResult
+        arguments: ""  # Empty string

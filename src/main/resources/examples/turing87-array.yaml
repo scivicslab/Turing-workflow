@@ -1,0 +1,146 @@
+# turing87-array.yaml
+# Uses @Action annotation version (TuringActionIIAR) - Part 2-3 example
+# Note: Uses object format for actions (array format parsing not yet implemented)
+name: turing87-array
+steps:
+- states: ["0", "100"]
+  actions:
+  - actor: turing
+    method: initMachine
+- states: ["100", "1"]
+  actions:
+  - actor: turing
+    method: printTape
+- states: ["1", "2"]
+  actions:
+  - actor: turing
+    method: put
+    arguments: "e"
+  - actor: turing
+    method: move
+    arguments: "R"
+  - actor: turing
+    method: put
+    arguments: "e"
+  - actor: turing
+    method: move
+    arguments: "R"
+  - actor: turing
+    method: put
+    arguments: "0"
+  - actor: turing
+    method: move
+    arguments: "R"
+  - actor: turing
+    method: move
+    arguments: "R"
+  - actor: turing
+    method: put
+    arguments: "0"
+  - actor: turing
+    method: move
+    arguments: "L"
+  - actor: turing
+    method: move
+    arguments: "L"
+- states: ["101", "2"]
+  actions:
+  - actor: turing
+    method: printTape
+- states: ["2", "2"]
+  actions:
+  - actor: turing
+    method: matchCurrentValue
+    arguments: "1"
+  - actor: turing
+    method: move
+    arguments: "R"
+  - actor: turing
+    method: put
+    arguments: "x"
+  - actor: turing
+    method: move
+    arguments: "L"
+  - actor: turing
+    method: move
+    arguments: "L"
+  - actor: turing
+    method: move
+    arguments: "L"
+- states: ["2", "3"]
+  actions:
+  - actor: turing
+    method: matchCurrentValue
+    arguments: "0"
+- states: ["3", "3"]
+  actions:
+  - actor: turing
+    method: isAny
+  - actor: turing
+    method: move
+    arguments: "R"
+  - actor: turing
+    method: move
+    arguments: "R"
+- states: ["3", "4"]
+  actions:
+  - actor: turing
+    method: isNone
+  - actor: turing
+    method: put
+    arguments: "1"
+  - actor: turing
+    method: move
+    arguments: "L"
+- states: ["4", "3"]
+  actions:
+  - actor: turing
+    method: matchCurrentValue
+    arguments: "x"
+  - actor: turing
+    method: put
+    arguments: " "
+  - actor: turing
+    method: move
+    arguments: "R"
+- states: ["4", "5"]
+  actions:
+  - actor: turing
+    method: matchCurrentValue
+    arguments: "e"
+  - actor: turing
+    method: move
+    arguments: "R"
+- states: ["4", "4"]
+  actions:
+  - actor: turing
+    method: isNone
+  - actor: turing
+    method: move
+    arguments: "L"
+  - actor: turing
+    method: move
+    arguments: "L"
+- states: ["5", "5"]
+  actions:
+  - actor: turing
+    method: isAny
+  - actor: turing
+    method: move
+    arguments: "R"
+  - actor: turing
+    method: move
+    arguments: "R"
+- states: ["5", "101"]
+  actions:
+  - actor: turing
+    method: isNone
+  - actor: turing
+    method: put
+    arguments: "0"
+  - actor: turing
+    method: move
+    arguments: "L"
+  - actor: turing
+    method: move
+    arguments: "L"

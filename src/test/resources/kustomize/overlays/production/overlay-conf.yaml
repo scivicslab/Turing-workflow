@@ -1,0 +1,14 @@
+apiVersion: pojoactor.scivicslab.com/v1
+kind: OverlayConf
+
+bases:
+  - ../../base
+
+patches:
+  - patch-prod.yaml
+
+vars:
+  environment: production
+  nodeGroup: webservers
+
+namePrefix: prod-

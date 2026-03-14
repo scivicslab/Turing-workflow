@@ -1,0 +1,16 @@
+name: loop-pattern-workflow
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: loopActor
+        method: increment
+  - states: ["1", "1"]
+    actions:
+      - actor: loopActor
+        method: checkLimit
+      - actor: loopActor
+        method: increment
+  - states: ["1", "end"]
+    actions:
+      - actor: loopActor
+        method: finish

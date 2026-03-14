@@ -1,0 +1,14 @@
+name: sub-counter
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: counter
+        method: increment
+  - states: ["1", "2"]
+    actions:
+      - actor: counter
+        method: increment
+  - states: ["2", "end"]
+    actions:
+      - actor: counter
+        method: increment

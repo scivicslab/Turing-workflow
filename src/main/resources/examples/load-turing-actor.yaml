@@ -1,0 +1,13 @@
+name: load-turing-actor
+description: Load the Turing machine actor from JAR into the workflow editor
+steps:
+- states: ["0", "1"]
+  actions:
+  - actor: loader
+    method: loadJar
+    arguments: "com.scivicslab:turing-workflow:1.0.0"
+- states: ["1", "end"]
+  actions:
+  - actor: loader
+    method: createChild
+    arguments: '["loader", "turing", "com.scivicslab.turingworkflow.examples.turing.TuringActionIIAR"]'

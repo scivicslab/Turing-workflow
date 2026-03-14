@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workflow name="complex-branching">
+    <steps>
+        <!-- 初期状態から分岐1 -->
+        <transition from="init" to="state_A">
+            <action actor="checker" method="check_condition1"></action>
+        </transition>
+
+        <transition from="init" to="state_B">
+            <action actor="checker" method="check_condition1"></action>
+        </transition>
+
+        <!-- state_Aからさらに分岐 -->
+        <transition from="state_A" to="state_A1">
+            <action actor="checker" method="check_condition2"></action>
+        </transition>
+
+        <transition from="state_A" to="state_A2">
+            <action actor="checker" method="check_condition2"></action>
+        </transition>
+
+        <!-- state_A1からさらに分岐 -->
+        <transition from="state_A1" to="process_A">
+            <action actor="checker" method="check_condition3"></action>
+        </transition>
+
+        <transition from="state_A1" to="process_B">
+            <action actor="checker" method="check_condition3"></action>
+        </transition>
+
+        <!-- state_A2から分岐 -->
+        <transition from="state_A2" to="process_C">
+            <action actor="checker" method="check_condition4"></action>
+        </transition>
+
+        <transition from="state_A2" to="process_D">
+            <action actor="checker" method="check_condition4"></action>
+        </transition>
+
+        <!-- state_Bから分岐 -->
+        <transition from="state_B" to="process_E">
+            <action actor="checker" method="check_condition5"></action>
+        </transition>
+
+        <transition from="state_B" to="process_F">
+            <action actor="checker" method="check_condition5"></action>
+        </transition>
+
+        <!-- 各処理の実装 -->
+        <transition from="process_A" to="end">
+            <action actor="processor" method="process_A"></action>
+        </transition>
+
+        <transition from="process_B" to="end">
+            <action actor="processor" method="process_B"></action>
+        </transition>
+
+        <transition from="process_C" to="end">
+            <action actor="processor" method="process_C"></action>
+        </transition>
+
+        <transition from="process_D" to="end">
+            <action actor="processor" method="process_D"></action>
+        </transition>
+
+        <transition from="process_E" to="end">
+            <action actor="processor" method="process_E"></action>
+        </transition>
+
+        <transition from="process_F" to="end">
+            <action actor="processor" method="process_F"></action>
+        </transition>
+    </steps>
+</workflow>

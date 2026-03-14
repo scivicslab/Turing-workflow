@@ -1,0 +1,12 @@
+name: multi-action-workflow
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: math
+        method: add
+        arguments: ["5", "3"]
+      - actor: math
+        method: multiply
+        arguments: ["2", "4"]
+      - actor: math
+        method: getLastResult

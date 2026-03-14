@@ -1,0 +1,9 @@
+name: MainWorkflow
+
+steps:
+  - label: init
+    actions:
+      - actor: nodeGroup
+        method: createAccumulator
+        arguments:
+          - mixed-simple

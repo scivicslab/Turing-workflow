@@ -1,0 +1,11 @@
+name: main-calls-sub
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: this
+        method: call
+        arguments: ["sub-counter.yaml"]
+  - states: ["1", "end"]
+    actions:
+      - actor: counter
+        method: getCount

@@ -1,0 +1,8 @@
+name: SetupWorkflow
+
+steps:
+  - label: setup-step-one
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["targeted-setup-1"]

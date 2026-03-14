@@ -1,0 +1,44 @@
+name: multi-state-loop-workflow
+steps:
+  # Entry point
+  - states: ["0", "1"]
+    actions:
+      - actor: cycleActor
+        method: phase1
+        arguments: "prepare"
+
+  # Phase 1: First processing step
+  - states: ["1", "2"]
+    actions:
+      - actor: cycleActor
+        method: phase1
+        arguments: "execute"
+
+  # Phase 2: Second processing step
+  - states: ["2", "3"]
+    actions:
+      - actor: cycleActor
+        method: phase2
+        arguments: "execute"
+
+  # Phase 3: Third processing step
+  - states: ["3", "4"]
+    actions:
+      - actor: cycleActor
+        method: phase3
+        arguments: "execute"
+
+  # Continue cycle: go back to state 1 (if checkContinue succeeds)
+  - states: ["4", "1"]
+    actions:
+      - actor: cycleActor
+        method: checkContinue
+      - actor: cycleActor
+        method: phase1
+        arguments: "restart"
+
+  # Exit cycle: go to end (when checkContinue fails)
+  - states: ["4", "end"]
+    actions:
+      - actor: cycleActor
+        method: finalize

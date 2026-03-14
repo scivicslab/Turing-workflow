@@ -1,0 +1,49 @@
+name: turing83
+steps:
+- states:
+  - "0"
+  - "1"
+  actions:
+  - actor: turing
+    method: initMachine
+- states:
+  - "1"
+  - "2"
+  actions:
+  - actor: turing
+    method: printTape
+- states:
+  - "2"
+  - "3"
+  actions:
+  - actor: turing
+    method: put
+    arguments: "0"
+  - actor: turing
+    method: move
+    arguments: "R"
+- states:
+  - "3"
+  - "4"
+  actions:
+  - actor: turing
+    method: move
+    arguments: "R"
+- states:
+  - "4"
+  - "5"
+  actions:
+  - actor: turing
+    method: put
+    arguments: "1"
+  - actor: turing
+    method: move
+    arguments: "R"
+- states:
+  - "5"
+  - "1"
+  actions:
+  - actor: turing
+    method: move
+    arguments: "R"
+

@@ -1,0 +1,18 @@
+name: execution-mode-test
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: math
+        method: add
+        arguments: ["10", "5"]
+  - states: ["1", "2"]
+    actions:
+      - actor: math
+        method: multiply
+        arguments: ["3", "4"]
+        execution: POOL
+  - states: ["2", "end"]
+    actions:
+      - actor: math
+        method: getLastResult
+        execution: DIRECT

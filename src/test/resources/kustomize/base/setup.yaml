@@ -1,0 +1,16 @@
+name: SetupWorkflow
+
+steps:
+  - states: ["0", "1"]
+    label: setup-step-one
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["setup-1"]
+
+  - states: ["1", "end"]
+    label: setup-step-two
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["setup-2"]

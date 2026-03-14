@@ -1,0 +1,17 @@
+name: error-handling-workflow
+steps:
+  # Attempt risky operation - if it fails, fall through to retry step
+  - states: ["0", "1"]
+    actions:
+      - actor: errorActor
+        method: riskyOperation
+  # Fallback: if riskyOperation fails, handle error and stay at state 0 to retry
+  - states: ["0", "0"]
+    actions:
+      - actor: errorActor
+        method: handleError
+  # After success, finalize
+  - states: ["1", "end"]
+    actions:
+      - actor: errorActor
+        method: riskyOperation
