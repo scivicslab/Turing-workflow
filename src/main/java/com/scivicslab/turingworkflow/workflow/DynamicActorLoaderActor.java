@@ -107,8 +107,11 @@ public class DynamicActorLoaderActor implements CallableByActionName {
         this.system = system;
     }
 
+    private static final Logger logger = Logger.getLogger(DynamicActorLoaderActor.class.getName());
+
     @Override
     public ActionResult callByActionName(String actionName, String args) {
+        logger.info("DynamicActorLoader: action='" + actionName + "' args='" + args + "'");
         try {
             switch (actionName) {
                 case "loadJar":

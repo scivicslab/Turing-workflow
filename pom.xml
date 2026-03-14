@@ -7,7 +7,7 @@
 
     <groupId>com.scivicslab</groupId>
     <artifactId>turing-workflow</artifactId>
-    <version>1.0.0</version>
+    <version>3.0.0</version>
     <packaging>jar</packaging>
 
     <name>Turing-workflow</name>

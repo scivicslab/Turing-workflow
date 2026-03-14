@@ -92,6 +92,8 @@ public class Interpreter {
 
     private BreakpointListener breakpointListener = null;
 
+    private ActionFailureListener actionFailureListener = null;
+
     protected IIActorSystem system = null;
 
     /**
@@ -811,6 +813,10 @@ public class Interpreter {
                 }
                 // Hook: notify subclasses that transition failed
                 onExitTransition(transition, false, actionResult);
+                logger.warning("Action failed at state '" + currentState + "' transition " + transition.getStates() + ": " + actionResult.getResult());
+                if (actionFailureListener != null) {
+                    actionFailureListener.onActionFailure(transition, currentState, actionResult);
+                }
                 // Action failed, try next step
             }
             currentTransitionIndex++;
@@ -1384,6 +1390,15 @@ public class Interpreter {
 
     public void setBreakpointListener(BreakpointListener listener) {
         this.breakpointListener = listener;
+    }
+
+    @FunctionalInterface
+    public interface ActionFailureListener {
+        void onActionFailure(Transition transition, String currentState, ActionResult result);
+    }
+
+    public void setActionFailureListener(ActionFailureListener listener) {
+        this.actionFailureListener = listener;
     }
 
     public void resume() {
