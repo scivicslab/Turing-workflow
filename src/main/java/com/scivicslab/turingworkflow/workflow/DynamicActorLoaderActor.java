@@ -95,8 +95,28 @@ public class DynamicActorLoaderActor implements CallableByActionName {
 
     protected final IIActorSystem system;
 
-    /** Map of JAR path to ClassLoader for loaded JARs */
+    /** Set of loaded JAR paths (for dedup) */
+    private final java.util.Set<String> loadedJarPaths = new java.util.LinkedHashSet<>();
+
+    /** Shared ClassLoader for all dynamically loaded JARs */
+    private SharedClassLoader sharedClassLoader;
+
+    /** Map of JAR path to ClassLoader for loaded JARs (legacy, kept for compatibility) */
     private final Map<String, URLClassLoader> loadedJars = new LinkedHashMap<>();
+
+    /**
+     * URLClassLoader subclass that exposes addURL for dynamic JAR addition.
+     */
+    private static class SharedClassLoader extends URLClassLoader {
+        SharedClassLoader(URL[] urls, ClassLoader parent) {
+            super(urls, parent);
+        }
+
+        @Override
+        public void addURL(URL url) {
+            super.addURL(url);
+        }
+    }
 
     /**
      * Constructs a new DynamicActorLoaderActor.
@@ -180,7 +200,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             String jarPath = resolveMavenCoordinate(jarSpec);
 
             // Check if already loaded
-            if (loadedJars.containsKey(jarPath)) {
+            if (loadedJarPaths.contains(jarPath)) {
                 return new ActionResult(true, "JAR already loaded: " + jarPath);
             }
 
@@ -191,12 +211,19 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             }
             URL jarUrl = path.toUri().toURL();
 
-            URLClassLoader classLoader = new URLClassLoader(
-                new URL[]{jarUrl},
-                getClass().getClassLoader()
-            );
+            // Use shared ClassLoader: add URL to single shared instance
+            if (sharedClassLoader == null) {
+                sharedClassLoader = new SharedClassLoader(
+                    new URL[]{jarUrl},
+                    getClass().getClassLoader()
+                );
+            } else {
+                sharedClassLoader.addURL(jarUrl);
+            }
 
-            loadedJars.put(jarPath, classLoader);
+            loadedJarPaths.add(jarPath);
+            // Keep legacy map updated for backward compatibility
+            loadedJars.put(jarPath, sharedClassLoader);
 
             return new ActionResult(true, "Loaded JAR: " + jarPath);
 
@@ -284,25 +311,22 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                 return new ActionResult(false, "Parent actor not found: " + parentName);
             }
 
-            // Try to load class: first from system classpath, then from loaded JARs
+            // Try to load class: first from system classpath, then from shared ClassLoader
             Class<?> clazz = null;
 
             // 1. Try system classpath first
             try {
                 clazz = Class.forName(className);
             } catch (ClassNotFoundException e) {
-                // Not on system classpath, try loaded JARs
+                // Not on system classpath, try shared ClassLoader
             }
 
-            // 2. If not found, try loaded JARs
-            if (clazz == null) {
-                for (URLClassLoader loader : loadedJars.values()) {
-                    try {
-                        clazz = loader.loadClass(className);
-                        break;
-                    } catch (ClassNotFoundException e) {
-                        // Try next loader
-                    }
+            // 2. If not found, try shared ClassLoader
+            if (clazz == null && sharedClassLoader != null) {
+                try {
+                    clazz = sharedClassLoader.loadClass(className);
+                } catch (ClassNotFoundException e) {
+                    // Not found in shared ClassLoader either
                 }
             }
 
@@ -371,11 +395,11 @@ public class DynamicActorLoaderActor implements CallableByActionName {
      * @return ActionResult with the list of loaded JARs
      */
     private ActionResult listLoadedJars() {
-        if (loadedJars.isEmpty()) {
+        if (loadedJarPaths.isEmpty()) {
             return new ActionResult(true, "No JARs loaded");
         }
         return new ActionResult(true,
-            "Loaded JARs: " + String.join(", ", loadedJars.keySet()));
+            "Loaded JARs: " + String.join(", ", loadedJarPaths));
     }
 
     /**
@@ -432,14 +456,19 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             // Load actor using DynamicActorLoader
             Path jar = Paths.get(jarPath);
 
-            // Also store ClassLoader for potential reuse by createChild
-            if (!loadedJars.containsKey(jarPath)) {
+            // Also add to shared ClassLoader for potential reuse by createChild
+            if (!loadedJarPaths.contains(jarPath)) {
                 URL jarUrl = jar.toUri().toURL();
-                URLClassLoader classLoader = new URLClassLoader(
-                    new URL[]{jarUrl},
-                    getClass().getClassLoader()
-                );
-                loadedJars.put(jarPath, classLoader);
+                if (sharedClassLoader == null) {
+                    sharedClassLoader = new SharedClassLoader(
+                        new URL[]{jarUrl},
+                        getClass().getClassLoader()
+                    );
+                } else {
+                    sharedClassLoader.addURL(jarUrl);
+                }
+                loadedJarPaths.add(jarPath);
+                loadedJars.put(jarPath, sharedClassLoader);
             }
 
             Object actor = DynamicActorLoader.loadActor(jar, className, actorName);
@@ -592,15 +621,20 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             Path path = Paths.get(jarPath);
             URL jarUrl = path.toUri().toURL();
 
-            // Create new ClassLoader for the plugin JAR (or reuse if already loaded)
-            URLClassLoader classLoader = loadedJars.get(jarPath);
-            if (classLoader == null) {
-                classLoader = new URLClassLoader(
-                    new URL[]{jarUrl},
-                    getClass().getClassLoader()
-                );
-                loadedJars.put(jarPath, classLoader);
+            // Add to shared ClassLoader (or reuse if already loaded)
+            if (!loadedJarPaths.contains(jarPath)) {
+                if (sharedClassLoader == null) {
+                    sharedClassLoader = new SharedClassLoader(
+                        new URL[]{jarUrl},
+                        getClass().getClassLoader()
+                    );
+                } else {
+                    sharedClassLoader.addURL(jarUrl);
+                }
+                loadedJarPaths.add(jarPath);
+                loadedJars.put(jarPath, sharedClassLoader);
             }
+            URLClassLoader classLoader = sharedClassLoader;
 
             // Load providers from the JAR using ServiceLoader
             ServiceLoader<ActorProvider> loader =

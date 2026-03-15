@@ -113,8 +113,16 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
             Class<?>[] params = method.getParameterTypes();
             if (params.length != 1 || params[0] != String.class) {
                 logger.warning(String.format(
-                    "@Action method %s.%s has invalid parameters (expected single String parameter)",
-                    this.getClass().getSimpleName(), method.getName()));
+                    "@Action method %s.%s has invalid parameters (expected single String parameter)"
+                    + " [params.length=%d, params[0]=%s, params[0].classLoader=%s, String.class.classLoader=%s,"
+                    + " method.declaringClass=%s, method.declaringClass.classLoader=%s]",
+                    this.getClass().getSimpleName(), method.getName(),
+                    params.length,
+                    params.length > 0 ? params[0].getName() : "N/A",
+                    params.length > 0 ? params[0].getClassLoader() : "N/A",
+                    String.class.getClassLoader(),
+                    method.getDeclaringClass().getName(),
+                    method.getDeclaringClass().getClassLoader()));
                 continue;
             }
 
