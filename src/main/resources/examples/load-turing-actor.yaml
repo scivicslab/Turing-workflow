@@ -5,7 +5,7 @@ steps:
   actions:
   - actor: loader
     method: loadJar
-    arguments: "com.scivicslab:turing-workflow:1.0.0"
+    arguments: "com.scivicslab:turing-workflow:3.0.0"
 - states: ["1", "end"]
   actions:
   - actor: loader

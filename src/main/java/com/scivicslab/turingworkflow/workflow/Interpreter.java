@@ -813,7 +813,7 @@ public class Interpreter {
                 }
                 // Hook: notify subclasses that transition failed
                 onExitTransition(transition, false, actionResult);
-                logger.warning("Action failed at state '" + currentState + "' transition " + transition.getStates() + ": " + actionResult.getResult());
+                logger.finest("Action failed at state '" + currentState + "' transition " + transition.getStates() + ": " + actionResult.getResult());
                 if (actionFailureListener != null) {
                     actionFailureListener.onActionFailure(transition, currentState, actionResult);
                 }
