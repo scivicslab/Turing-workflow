@@ -127,7 +127,23 @@ public class IIActorSystem extends ActorSystem {
      */
     @SuppressWarnings("unchecked")
     public <T> IIActorRef<T> getIIActor(String name) {
-        return (IIActorRef<T>)iiActors.get(name);
+        return (IIActorRef<T>) iiActors.computeIfAbsent(name, this::tryAutoCreate);
+    }
+
+    private IIActorRef<?> tryAutoCreate(String name) {
+        if (name.equals("calc") || name.startsWith("calc:")) {
+            return new CalcActor(name, this);
+        }
+        if (name.equals("list") || name.startsWith("list:")) {
+            return new ListActor(name, this);
+        }
+        if (name.equals("out")) {
+            return new OutActor(name, this);
+        }
+        if (name.equals("str") || name.startsWith("str:")) {
+            return new StringActor(name, this);
+        }
+        return null;
     }
 
     /**

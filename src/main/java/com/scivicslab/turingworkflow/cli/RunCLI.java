@@ -26,12 +26,18 @@ import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 
+import org.json.JSONObject;
+
 import com.scivicslab.pluggablecli.CommandRepository;
 import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.turingworkflow.workflow.DynamicActorLoaderIIAR;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 import com.scivicslab.turingworkflow.workflow.Interpreter;
 import com.scivicslab.turingworkflow.workflow.InterpreterIIAR;
 import com.scivicslab.turingworkflow.workflow.VarsActor;
+import com.scivicslab.turingworkflow.workflow.accumulator.ConsoleAccumulator;
+import com.scivicslab.turingworkflow.workflow.accumulator.MultiplexerAccumulator;
+import com.scivicslab.turingworkflow.workflow.accumulator.MultiplexerAccumulatorIIAR;
 
 /**
  * CLI subcommand for running YAML/JSON workflows.
@@ -133,6 +139,15 @@ public class RunCLI {
                 .build();
         interpreter.setWorkflowBaseDir(baseDirectory.getAbsolutePath());
 
+        // Register built-in actors
+        DynamicActorLoaderIIAR loaderActor = new DynamicActorLoaderIIAR("loader", system);
+        system.addIIActor(loaderActor);
+
+        MultiplexerAccumulator mux = new MultiplexerAccumulator();
+        mux.addTarget(new ConsoleAccumulator());
+        MultiplexerAccumulatorIIAR logActor = new MultiplexerAccumulatorIIAR("log", mux, system);
+        system.addIIActor(logActor);
+
         // Create vars actor and register
         VarsActor varsActor = new VarsActor(system, variables);
         system.addIIActor(varsActor);
@@ -141,6 +156,15 @@ public class RunCLI {
         InterpreterIIAR interpreterActor = new InterpreterIIAR("interpreter", interpreter, system);
         interpreter.setSelfActorRef(interpreterActor);
         system.addIIActor(interpreterActor);
+
+        // Put -P variables into interpreter JSON state for ${varName} expansion
+        for (Map.Entry<String, String> entry : variables.entrySet()) {
+            String jsonArg = new JSONObject()
+                .put("path", entry.getKey())
+                .put("value", entry.getValue())
+                .toString();
+            interpreterActor.callByActionName("putJson", jsonArg);
+        }
 
         // Load workflow
         try {

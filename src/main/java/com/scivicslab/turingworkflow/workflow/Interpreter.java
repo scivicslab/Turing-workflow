@@ -353,12 +353,16 @@ public class Interpreter {
      * <ul>
      *   <li>{@code this} or {@code .} - expands to the current actor's name</li>
      *   <li>{@code ${varName}} - expands from JSON state or last result</li>
+     *   <li>{@code $(actor.method)} - calls actor method and embeds the result</li>
      * </ul>
      *
      * @param input the string containing patterns to expand
      * @return the expanded string
      */
     private String expandVariables(String input) {
+        if (input == null) return null;
+        // Expand $(actor.method) inline method calls first
+        input = expandMethodCalls(input);
         if (selfActorRef != null) {
             // Resolve "this" and "." to the actual actor name
             if ("this".equals(input) || ".".equals(input)) {
@@ -367,6 +371,40 @@ public class Interpreter {
             return selfActorRef.expandVariables(input);
         }
         return input;
+    }
+
+    /**
+     * Expands {@code $(actor.method)} patterns by calling the named method on the named actor
+     * and substituting the result inline.
+     */
+    private String expandMethodCalls(String input) {
+        if (input == null || !input.contains("$(")) return input;
+        StringBuilder result = new StringBuilder();
+        int pos = 0;
+        while (true) {
+            int start = input.indexOf("$(", pos);
+            if (start == -1) { result.append(input.substring(pos)); break; }
+            int end = input.indexOf(")", start + 2);
+            if (end == -1) { result.append(input.substring(pos)); break; }
+            result.append(input, pos, start);
+            String expr = input.substring(start + 2, end); // e.g. "calc:i.get"
+            int dot = expr.lastIndexOf('.');
+            if (dot > 0 && system != null) {
+                String actorName = expr.substring(0, dot);
+                String methodName = expr.substring(dot + 1);
+                IIActorRef<?> actor = system.getIIActor(actorName);
+                if (actor != null) {
+                    ActionResult ar = actor.callByActionName(methodName, "");
+                    result.append(ar != null ? ar.getResult() : "");
+                } else {
+                    result.append(input, start, end + 1);
+                }
+            } else {
+                result.append(input, start, end + 1);
+            }
+            pos = end + 1;
+        }
+        return result.toString();
     }
 
     /**
@@ -1208,7 +1246,41 @@ public class Interpreter {
      */
     public String getToState(Transition transition) {
         List<String> states = transition.getStates();
-        return states.size() >= 2 ? states.get(1) : null;
+        if (states.size() < 2) return null;
+        String to = states.get(1);
+        if (to != null && to.startsWith("jexl:")) {
+            to = evaluateToStateJexl(to.substring(5), currentState);
+        }
+        return to;
+    }
+
+    private String evaluateToStateJexl(String expression, String state) {
+        try {
+            JexlEngine engine = getJexlEngine();
+            JexlContext context = new MapContext();
+            context.set("state", state);
+            context.set("s", state);
+            try {
+                double n = Double.parseDouble(state);
+                context.set("n", n);
+            } catch (NumberFormatException e) {
+                context.set("n", null);
+            }
+            Object result = engine.createExpression(expression).evaluate(context);
+            if (result == null) return state;
+            // Return integer string when result is whole number
+            if (result instanceof Number num) {
+                double v = num.doubleValue();
+                if (v == Math.floor(v) && !Double.isInfinite(v)) {
+                    return String.valueOf((long) v);
+                }
+                return String.valueOf(v);
+            }
+            return String.valueOf(result);
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "JEXL to-state evaluation failed: " + expression, e);
+            return state;
+        }
     }
 
     /**
