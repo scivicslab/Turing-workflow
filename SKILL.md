@@ -15,6 +15,15 @@ name: my-workflow          # human-readable name
 description: |             # optional multi-line description
   What this workflow does.
 
+params:                    # optional: parameter metadata for the workflow editor UI
+  repo:
+    description: "Target GitHub repository (e.g. owner/repo-name)"
+  dir:
+    description: "Absolute path to the local project directory"
+  agent:
+    description: "Agent name to call"
+    default: "claude"
+
 steps:
   - states: ["0", "1"]     # [currentState, nextState]
     label: my-step         # optional stable id (for overlays/patches)
@@ -30,6 +39,18 @@ steps:
       - actor: anotherActor
         method: doThing
         arguments: ["arg1", "arg2"]
+```
+
+**`params` section** — optional metadata consumed by the Turing Workflow Editor Run panel.
+When present, the editor shows each parameter's description as a placeholder and pre-fills
+its `default` value in the input form. Parameters without a `default` require manual input.
+The `params` section has no effect on CLI invocation (`-P key=value` works regardless).
+
+```yaml
+params:
+  myParam:
+    description: "What this parameter means"   # shown as placeholder in the UI
+    default: "someValue"                       # pre-filled in the UI; optional
 ```
 
 **Key rules:**
@@ -594,7 +615,7 @@ Default target: `http://localhost:8090/mcp`.
 **Actor name convention:** `promptBuilder`
 
 Assembles structured prompts from constraints (warnings), background context, and a message.
-Output includes Japanese section headers: `[制約]`, `[背景]`, `[メッセージ]`.
+Output section headers: `[Constraints]`, `[Context]`, `[Message]`.
 Sections with no entries are omitted. `build` fails if `addMessage` was not called.
 
 | Method | Arguments | Description |
@@ -1064,6 +1085,9 @@ When asked to generate a Turing workflow YAML, follow these rules:
 5. **Always include a catch-all**: `states: ["!end", "end"]` at the very end, with cleanup actions.
 6. **Use `label:` on every transition** to aid debugging and future patching.
 7. **Variable substitution**: use `${varName}` in arguments; pass variables via `-P` on the CLI.
+   **Always include a `params:` section** for every `${varName}` placeholder used in the workflow.
+   Each entry should have a `description` (shown in the editor UI) and a `default` if a sensible
+   default exists. Example: if the workflow uses `${agent}`, add `agent: { description: "Agent name", default: "claude" }`.
 8. **Storing inter-step data**: use `interpreter.putJson` / `interpreter.getJson` or
    actor-level `putJson` / `getJson` to pass results between non-adjacent steps.
 9. **Actor arguments format**: single value → plain string; multiple values → JSON array

@@ -18,6 +18,7 @@
 package com.scivicslab.turingworkflow.cli;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,6 +28,7 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 
 import org.json.JSONObject;
+import org.yaml.snakeyaml.Yaml;
 
 import com.scivicslab.pluggablecli.CommandRepository;
 import com.scivicslab.pojoactor.core.ActionResult;
@@ -48,6 +50,8 @@ import com.scivicslab.turingworkflow.workflow.accumulator.MultiplexerAccumulator
  * <pre>
  * pojo-actor run -d ./workflows -w hello.yaml
  * pojo-actor run -w ./hello.yaml
+ * pojo-actor run -w ./hello.yaml -V ./vars.yaml
+ * pojo-actor run -w ./hello.yaml -V ./vars.yaml -P key=override
  * </pre>
  *
  * @author devteam@scivicslab.com
@@ -87,10 +91,16 @@ public class RunCLI {
                 .argName("dir")
                 .desc("Overlay directory for kustomize")
                 .build());
+        opts.addOption(Option.builder("V")
+                .longOpt("vars-file")
+                .hasArg(true)
+                .argName("file")
+                .desc("YAML file with a 'vars:' map to define variables")
+                .build());
         opts.addOption(Option.builder("P")
                 .hasArg(true)
                 .argName("key=value")
-                .desc("Define a variable (e.g., -Pname=value)")
+                .desc("Define a variable (e.g., -Pname=value); overrides -V")
                 .build());
 
         repo.addCommand("Workflow", "run", opts, "Run a YAML/JSON workflow",
@@ -110,8 +120,26 @@ public class RunCLI {
         String overlayPath = cl.getOptionValue("o");
         File overlayDirectory = overlayPath != null ? new File(overlayPath) : null;
 
-        // Parse -P key=value pairs
+        // Load variables: -V file first, then -P overrides
         Map<String, String> variables = new HashMap<>();
+        String varsFilePath = cl.getOptionValue("V");
+        if (varsFilePath != null) {
+            Path varsPath = Path.of(varsFilePath);
+            if (!Files.exists(varsPath)) {
+                System.err.println("Vars file not found: " + varsPath);
+                System.exit(1);
+            }
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> doc = new Yaml().load(Files.readString(varsPath));
+                if (doc != null && doc.get("vars") instanceof Map<?, ?> varsMap) {
+                    varsMap.forEach((k, v) -> variables.put(String.valueOf(k), String.valueOf(v)));
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to load vars file: " + e.getMessage());
+                System.exit(1);
+            }
+        }
         String[] pValues = cl.getOptionValues("P");
         if (pValues != null) {
             for (String pv : pValues) {
