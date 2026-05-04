@@ -27,7 +27,7 @@ params:                    # optional: parameter metadata for the workflow edito
 steps:
   - states: ["0", "1"]     # [currentState, nextState]
     label: my-step         # optional stable id (for overlays/patches)
-    note: "what this does" # optional documentation-only comment
+    note: "what this does" # optional: written to execution log; helps trace which step failed
     delay: 500             # optional: milliseconds to wait before executing
     actions:
       - actor: someActor
@@ -89,10 +89,43 @@ arguments: "value is $(calc.get) now"  # mixed with literal text
 arguments: "$(list:items.get)"         # reads index 0 of list:items (default)
 ```
 
+### Expression mechanisms — four types
+
+| Where used | Syntax | Engine |
+|-----------|--------|--------|
+| Action `arguments` | `${varName}` — external param / JSON state | Java + Jackson (dot-path) |
+| Action `arguments` | `$(actor.method)` — inline method call | Java (evaluated before action runs) |
+| `states` patterns | `*`, `!state`, `a\|b\|c`, `>=5` | Java string matching |
+| `states` patterns | `jexl:expr` | Apache Commons JEXL 3 |
+| `calc.eval` argument | JEXL expression | Apache Commons JEXL 3 |
+
+`$(actor.method)` is expanded **before** `${varName}`. `${result}` holds the `message` from the
+previous `ActionResult` and is substituted as part of `${varName}` processing.
+
 ### JEXL expressions in `states`
 
 Both elements of `states` may be JEXL expressions prefixed with `jexl:`.
-Available variables: `state` / `s` (current state string), `n` (state parsed as number, null if non-numeric).
+
+**Variables set by Turing Workflow before evaluating a `states` JEXL expression:**
+
+| Variable | Type | Value |
+|----------|------|-------|
+| `state` / `s` | String | Current state string |
+| `n` | Number or null | Current state parsed as a number; `null` if not parseable |
+
+If `n` is `null`, numeric comparisons throw an exception — avoid mixing numeric and string states
+in the same JEXL expression.
+
+**Numeric shorthand** — available without `jexl:` prefix:
+
+| Shorthand | Equivalent JEXL |
+|-----------|-----------------|
+| `">=10"` | `"jexl:n >= 10"` |
+| `">5"` | `"jexl:n > 5"` |
+| `"<3"` | `"jexl:n < 3"` |
+| `"<=0"` | `"jexl:n <= 0"` |
+
+`==` and `!=` have no shorthand — use full `jexl:` form.
 
 ```yaml
 states: ["jexl:n < 10", "jexl:n + 1"]   # loop: state increments each iteration
@@ -100,6 +133,9 @@ states: ["jexl:n >= 10", "end"]          # exit when counter reaches 10
 states: ["jexl:state == 'error'", "end"] # string comparison
 states: [">=10", "end"]                  # shorthand numeric comparison (no jexl: prefix)
 ```
+
+**`calc.eval` JEXL context** — when `calc.eval` is called, the variable `v` holds the current
+value of the `calc` actor. Example: `arguments: "v * 2 + 1"` doubles the counter then adds 1.
 
 ---
 
@@ -130,188 +166,19 @@ java -jar turing-workflow-3.0.1.jar run \
 
 The following actors are always available without any plugin loading.
 
-### 3.1 `loader` — Dynamic plugin loader
+| Actor | 役割 |
+|-------|------|
+| `loader` | 外部JARの動的ロードとアクター生成 |
+| `log` | 構造化ログエントリの蓄積 |
+| `vars` | キーバリューの変数ストア（`-P`で事前投入） |
+| `interpreter` | ワークフローエンジン自己参照・JSON状態管理 |
+| `calc` / `calc:name` | 数値変数（JEXL式評価対応） |
+| `list` / `list:name` | 文字列リスト（`ArrayList<String>`ラッパー） |
+| `str` / `str:name` | 文字列変数（JSON安全エスケープ対応） |
+| `out` | 標準出力・標準エラー出力 |
+| `this` | サブワークフロー呼び出し |
 
-Loads external JAR files and creates actors from their classes at runtime.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `loadJar` | `"path/to/plugin.jar"` or `"groupId:artifactId:version"` | Loads a JAR; Maven coordinates resolve from `~/.m2/repository/` |
-| `createChild` | `["parentName", "actorName", "com.example.ActorClass"]` | Creates an actor under a parent; class must be `IIActorRef` subclass |
-| `listLoadedJars` | `""` | Lists all loaded JAR paths |
-
-**Two-step pattern (recommended):**
-```yaml
-- states: ["0", "1"]
-  label: load-plugin
-  actions:
-    - actor: loader
-      method: loadJar
-      arguments: "/data/jars/my-plugin-1.0.0.jar"
-
-- states: ["1", "2"]
-  label: create-actors
-  actions:
-    - actor: loader
-      method: createChild
-      arguments: ["ROOT", "myActor", "com.example.MyActorIIAR"]
-```
-
-### 3.2 `log` — Output accumulator
-
-Accumulates structured log entries. By default, entries are printed to stdout.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `add` | `{"source": "name", "type": "stdout\|stderr", "data": "message"}` | Adds a log entry |
-| `getSummary` | `""` | Returns formatted summary of all entries |
-| `getCount` | `""` | Returns the number of accumulated entries |
-| `clear` | `""` | Clears all entries |
-
-### 3.3 `vars` — Variable store
-
-Holds key-value pairs. Pre-populated with `-P` options from the CLI.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `get` | `"varName"` or `["varName"]` | Returns the variable value |
-| `set` | `["varName", "value"]` | Sets a variable |
-| `list` | `""` | Lists all variable names |
-
-### 3.4 `interpreter` — Workflow engine self-reference
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `putJson` | `{"path": "key", "value": "val"}` | Stores a value in JSON state (accessible via `${key}`) |
-| `getJson` | `"key"` or `["key"]` | Gets a value from JSON state |
-| `hasJson` | `"key"` | Returns `"true"` or `"false"` |
-| `clearJson` | `""` | Clears JSON state |
-| `printJson` | `""` | Prints JSON state to stdout |
-| `sleep` | `"1000"` | Sleeps N milliseconds |
-| `print` | `"text"` | Prints text to stdout |
-| `doNothing` | `""` | No-op (always succeeds) |
-
-### 3.5 JSON State API (available on ALL actors)
-
-Every actor inherits these actions from `IIActorRef`:
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `putJson` | `{"path": "key.nested", "value": <any>}` | Stores value in actor's JSON state |
-| `getJson` | `"key.nested"` | Reads from actor's JSON state; result goes to `${result}` |
-| `hasJson` | `"key"` | Checks existence; returns `"true"`/`"false"` |
-| `clearJson` | `""` | Clears actor's JSON state |
-| `printJson` | `""` | Prints actor's JSON state to stdout |
-
-### 3.6 `calc` / `calc:name` — Numeric variable
-
-Auto-created on first use. Named instances (`calc:x`, `calc:count`) are independent.
-Initial value is `0`. Returns the new value as a string after each operation.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `set` | `"3.14"` | Set value |
-| `get` | `""` | Read value |
-| `inc` | `""` | Increment by 1 |
-| `dec` | `""` | Decrement by 1 |
-| `add` | `"5"` | Add to value |
-| `sub` | `"5"` | Subtract from value |
-| `mul` | `"2"` | Multiply value |
-| `div` | `"2"` | Divide value |
-| `mod` | `"3"` | Modulo |
-| `reset` | `""` | Reset to 0 |
-| `eval` | `"v * 2 + 1"` | Evaluate JEXL expression; `v` = current value |
-
-```yaml
-- actor: calc:i
-  method: set
-  arguments: "0"
-- actor: calc:i
-  method: inc
-```
-
-### 3.7 `list` / `list:name` — String list
-
-Auto-created on first use. Named instances (`list:files`, `list:errors`) are independent.
-Wraps `ArrayList<String>`.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `add` | `"value"` | Append element |
-| `get` | `"0"` (index; defaults to 0 if blank) | Get element by index |
-| `set` | `[index, "value"]` | Replace element at index |
-| `remove` | `"0"` (index) | Remove element by index |
-| `size` | `""` | List length |
-| `isEmpty` | `""` | True if empty |
-| `clear` | `""` | Remove all elements |
-| `contains` | `"value"` | True if element exists |
-| `indexOf` | `"value"` | Index of element (-1 if not found) |
-| `join` | `","` (separator; defaults to `", "` if blank) | Join elements with separator |
-
-```yaml
-- actor: list:items
-  method: add
-  arguments: "hello"
-- actor: out
-  method: print
-  arguments: "$(list:items.join)"   # prints: hello
-```
-
-### 3.8 `str` / `str:name` — String variable
-
-Auto-created on first use. Named instances (`str:title`, `str:body`) are independent.
-Stores a single mutable string (initial value: `""`).
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `set` | `"value"` | Set stored string |
-| `get` | `""` | Read stored string |
-| `clear` | `""` | Reset to empty string |
-| `append` | `"text"` | Append text to stored string |
-| `length` | `""` | Character count |
-| `trim` | `""` | Remove leading/trailing whitespace (in-place) |
-| `toUpperCase` | `""` | Convert to uppercase (in-place) |
-| `toLowerCase` | `""` | Convert to lowercase (in-place) |
-| `contains` | `"text"` | True if stored string contains argument |
-| `startsWith` | `"prefix"` | True if stored string starts with prefix |
-| `endsWith` | `"suffix"` | True if stored string ends with suffix |
-| `replace` | `["target", "replacement"]` | Replace all occurrences (in-place) |
-| `substring` | `[start]` or `[start, end]` | Extract substring |
-| `isEmpty` | `""` | True if stored string is empty |
-| `escapeJson` | `"raw text"` | JSON-escape the **argument** (does not modify stored value) |
-| `escapeJsonStored` | `""` | JSON-escape the **stored string** in-place |
-
-**Typical use — safe JSON embedding:**
-```yaml
-# Store LLM response then escape it before embedding in JSON argument
-- actor: str:body
-  method: set
-  arguments: "${result}"
-- actor: str:body
-  method: escapeJsonStored
-- actor: llm
-  method: callAgent
-  arguments: '{"agent": "reviewer", "prompt": "$(str:body.get)"}'
-```
-
-### 3.9 `out` — Print output
-
-Auto-created on first use.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `print` | `"message"` | Print to stdout with newline |
-| `error` | `"message"` | Print to stderr with newline |
-| `printf` | `["format", arg1, arg2, ...]` | Java `String.format`-style formatted print |
-
-```yaml
-- actor: out
-  method: print
-  arguments: "Done. count=$(calc.get)"
-- actor: out
-  method: printf
-  arguments: ["Result: %s (%.2f sec)", "${result}", "$(calc:elapsed.get)"]
-```
+詳細は `reference/built-in-actors.md` を参照
 
 ---
 
@@ -329,199 +196,196 @@ Auto-created on first use.
 
 ---
 
-## 5. Common Patterns
+## 5. Pattern Library（代表パターン）
 
-### 5.1 Linear pipeline
+### 5.1 Basic linear workflow
 
 ```yaml
+name: hello-world
+
 steps:
   - states: ["0", "1"]
+    label: greet
+    note: "print greeting"
+    actions:
+      - actor: out
+        method: print
+        arguments: "Hello, Turing Workflow!"
+
+  - states: ["1", "end"]
+    label: done
+    actions:
+      - actor: out
+        method: print
+        arguments: "Finished."
+
+  - states: ["!end", "end"]
+    label: catch-all
+    actions:
+      - actor: out
+        method: error
+        arguments: "Workflow ended unexpectedly."
+```
+
+---
+
+### 5.4 Conditional branching — by action success/failure
+
+`executeCommand` returns `false` when exit code is non-zero → falls through to the next transition.
+
+```yaml
+name: branch-by-command
+
+steps:
+  - states: ["0", "1"]
+    label: load-ssh-plugin
     actions:
       - actor: loader
         method: loadJar
-        arguments: "/path/to/plugin.jar"
+        arguments: "com.scivicslab.turingworkflow.plugins:plugin-ssh:1.0.0"
 
   - states: ["1", "2"]
+    label: create-node
     actions:
       - actor: loader
         method: createChild
-        arguments: ["ROOT", "worker", "com.example.WorkerIIAR"]
+        arguments: ["ROOT", "localNode", "com.scivicslab.turingworkflow.plugins.ssh.NodeActor"]
 
-  - states: ["2", "3"]
+  - states: ["2", "success"]
+    label: try-command
+    note: "exit code 0 → success; non-zero → try next transition"
     actions:
-      - actor: worker
-        method: process
-        arguments: "${input.file}"
+      - actor: localNode
+        method: executeCommand
+        arguments: ["ls ${target_dir}"]
 
-  - states: ["3", "end"]
+  - states: ["2", "fallback"]
+    label: dir-not-found
+    note: "always succeeds → taken when try-command failed"
     actions:
-      - actor: log
+      - actor: out
+        method: print
+        arguments: "Directory not found, taking fallback."
+
+  - states: ["success", "end"]
+    label: success-done
+    actions:
+      - actor: out
+        method: print
+        arguments: "Command succeeded."
+
+  - states: ["fallback", "end"]
+    label: fallback-done
+    actions:
+      - actor: out
+        method: print
+        arguments: "Fallback done."
+
+  - states: ["!end", "end"]
+    label: catch-all
+    actions:
+      - actor: out
+        method: error
+        arguments: "Workflow ended unexpectedly."
+```
+
+---
+
+### 5.8 Loop — JEXL state counter (fixed count, simplest)
+
+```yaml
+name: jexl-counter-loop
+
+steps:
+  - states: ["jexl:n < 5", "jexl:n + 1"]
+    label: loop-body
+    note: "n < 5: execute and advance state to n+1"
+    actions:
+      - actor: out
+        method: print
+        arguments: "Iteration: ${state}"
+
+  - states: ["jexl:n >= 5", "end"]
+    label: loop-exit
+    note: "n >= 5: exit"
+    actions:
+      - actor: out
+        method: print
+        arguments: "Loop finished."
+
+  - states: ["!end", "end"]
+    label: catch-all
+    actions:
+      - actor: out
+        method: error
+        arguments: "Workflow ended unexpectedly."
+```
+
+---
+
+### 5.10 Loop — `list:` actor full iteration
+
+```yaml
+name: list-loop
+
+steps:
+  - states: ["0", "1"]
+    label: add-items
+    note: "populate list (or fill it elsewhere before this step)"
+    actions:
+      - actor: list:items
         method: add
-        arguments: {"source": "pipeline", "type": "stdout", "data": "Done"}
+        arguments: "Apple"
+      - actor: list:items
+        method: add
+        arguments: "Banana"
+      - actor: list:items
+        method: add
+        arguments: "Cherry"
+
+  - states: ["1", "loop"]
+    label: setup
+    note: "initialize counter"
+    actions:
+      - actor: calc:i
+        method: set
+        arguments: "0"
+
+  - states: ["loop", "process"]
+    label: get-item
+    note: "got item at index i → process"
+    actions:
+      - actor: list:items
+        method: get
+        arguments: "$(calc:i.get)"
+
+  - states: ["loop", "end"]
+    label: loop-done
+    note: "index out of range → all done"
+    actions:
+      - actor: out
+        method: print
+        arguments: "All items processed."
+
+  - states: ["process", "loop"]
+    label: process-and-next
+    note: "${result} holds the item"
+    actions:
+      - actor: out
+        method: print
+        arguments: "Processing: ${result}"
+      - actor: calc:i
+        method: inc
+
+  - states: ["!end", "end"]
+    label: catch-all
+    actions:
+      - actor: out
+        method: error
+        arguments: "Workflow ended unexpectedly."
 ```
 
-### 5.2 Conditional branching (two alternatives from same state)
-
-```yaml
-# Try step1 — if it succeeds, go to state 5
-- states: ["4", "5"]
-  label: step1-ok
-  actions:
-    - actor: worker
-      method: tryProcess
-      arguments: "${result}"
-
-# If step1 failed, skip and loop back to state 3
-- states: ["4", "3"]
-  label: step1-failed-skip
-  actions:
-    - actor: log
-      method: add
-      arguments: {"source": "worker", "type": "stderr", "data": "Step 1 failed, skipping"}
-```
-
-### 5.3 Loop with sentinel (exhaustion-based)
-
-The actor returns `ActionResult(false, ...)` when exhausted. The engine then falls through to
-the exit transition from the same state.
-
-```yaml
-# Try to get next item; success → process it, failure → exit loop
-- states: ["loop", "process"]
-  label: get-next
-  actions:
-    - actor: promptBuilder
-      method: getNextWarning    # returns false when all warnings consumed
-
-# No more items — exit
-- states: ["loop", "end"]
-  label: loop-done
-  actions:
-    - actor: log
-      method: add
-      arguments: {"source": "workflow", "type": "stdout", "data": "All done."}
-
-# Process item (${result} = warning text from getNextWarning)
-- states: ["process", "loop"]
-  label: process-item
-  actions:
-    - actor: llm
-      method: prompt
-      arguments: "Check: ${result}"
-```
-
-### 5.4 Counter loop with `calc`
-
-Use the built-in `calc` actor as a counter. Exit by checking size.
-
-```yaml
-- states: ["init", "loop"]
-  label: init-counter
-  actions:
-    - actor: calc:i
-      method: set
-      arguments: "0"
-
-# Loop body: process item at index i
-- states: ["loop", "process"]
-  label: get-item
-  actions:
-    - actor: myActor
-      method: getItem
-      arguments: "$(calc:i.get)"
-
-# Exit when getItem fails (index out of range)
-- states: ["loop", "end"]
-  label: loop-done
-  actions:
-    - actor: out
-      method: print
-      arguments: "Done"
-
-- states: ["process", "loop"]
-  label: next
-  actions:
-    - actor: calc:i
-      method: inc
-```
-
-### 5.5 JEXL state-counter loop
-
-When the state itself can serve as the counter. Simplest pattern for fixed-count loops.
-
-```yaml
-# Loop body: state n < 5 → execute and advance state to n+1
-- states: ["jexl:n < 5", "jexl:n + 1"]
-  label: loop-body
-  actions:
-    - actor: out
-      method: print
-      arguments: "Iteration $(calc:i.get)"
-
-# Exit: state n >= 5 → end
-- states: ["jexl:n >= 5", "end"]
-  label: loop-exit
-  actions:
-    - actor: out
-      method: print
-      arguments: "Done"
-```
-
-**Note:** When using JEXL states, the initial state must be a number (e.g., `"0"`) so `n` is parseable.
-
-### 5.6 Catch-all error handler
-
-```yaml
-# Placed LAST — fires on any state that is not "end"
-- states: ["!end", "end"]
-  label: catch-all
-  actions:
-    - actor: pairs
-      method: closeOutput
-      arguments: ""
-    - actor: log
-      method: add
-      arguments: {"source": "workflow", "type": "stderr", "data": "Workflow ended unexpectedly"}
-```
-
-### 5.7 Storing intermediate results between steps
-
-```yaml
-- states: ["5", "6"]
-  label: store-result
-  actions:
-    - actor: vllm
-      method: segment
-      arguments: "${result}"
-    - actor: interpreter
-      method: putJson
-      arguments: {path: segmented, value: "${result}"}
-
-- states: ["8", "3"]
-  label: use-stored
-  actions:
-    - actor: vllm
-      method: toHiragana
-      arguments: "${segmented}"
-```
-
-### 5.8 Safe JSON embedding with `str`
-
-When `${result}` may contain newlines or quotes (LLM output), escape it before embedding in JSON.
-
-```yaml
-- states: ["5", "6"]
-  label: escape-and-send
-  actions:
-    - actor: str:body
-      method: set
-      arguments: "${result}"
-    - actor: str:body
-      method: escapeJsonStored
-    - actor: llm
-      method: callAgent
-      arguments: '{"agent": "reviewer", "prompt": "$(str:body.get)"}'
-```
+詳細は `reference/patterns.md` を参照
 
 ---
 
@@ -530,543 +394,25 @@ When `${result}` may contain newlines or quotes (LLM output), escape it before e
 Plugins are loaded at runtime via the `loader` actor. They must be installed in the local Maven
 repository (`~/.m2/repository/`) before use.
 
-### Installing a plugin
+| プラグイン | アーティファクト座標 | クラス | アクター名慣例 |
+|-----------|-------------------|--------|-------------|
+| `plugin-llm` | `com.scivicslab.turingworkflow.plugins:plugin-llm:1.0.0` | `com.scivicslab.turingworkflow.plugins.llm.LlmActor` | `llm` |
+| `plugin-prompt-builder` | `com.scivicslab.turingworkflow.plugins:plugin-prompt-builder:1.0.0` | `com.scivicslab.turingworkflow.plugins.promptbuilder.PromptBuilderActor` | `promptBuilder` |
+| `plugin-ssh` | `com.scivicslab.turingworkflow.plugins:plugin-ssh:1.0.0` | `com.scivicslab.turingworkflow.plugins.ssh.NodeActor` | `node-<hostname>` |
+| `plugin-inventory` | `com.scivicslab.turingworkflow.plugins:plugin-inventory:1.0.0` | `com.scivicslab.turingworkflow.plugins.inventory.NodeGroupActor` | `nodeGroup` |
+| `plugin-report` | `com.scivicslab.turingworkflow.plugins:plugin-report:1.0.0` | `com.scivicslab.turingworkflow.plugins.report.ReportBuilderActor` | `reportBuilder` |
 
-```bash
-# Clone the plugin repository and install to local Maven repo
-git clone https://github.com/scivicslab/Turing-workflow-plugins.git
-cd Turing-workflow-plugins
-rm -rf target
-mvn install
-```
-
-Or install a specific plugin only:
-```bash
-cd plugin-llm
-rm -rf target
-mvn install
-```
-
-After installation, the JAR can be referenced in workflows by Maven coordinate:
-```yaml
-- actor: loader
-  method: loadJar
-  arguments: "com.scivicslab.turingworkflow.plugins:plugin-llm:1.0.0"
-```
-
-Or by absolute path:
-```yaml
-- actor: loader
-  method: loadJar
-  arguments: "/data/jars/plugin-llm-1.0.0.jar"
-```
+詳細は `reference/plugins.md` を参照
 
 ---
 
-### 6.1 `plugin-llm` — LLM via MCP
+## 詳細リファレンス
 
-**Artifact:** `com.scivicslab.turingworkflow.plugins:plugin-llm:1.0.0`
-**Class:** `com.scivicslab.turingworkflow.plugins.llm.LlmActor`
-**Actor name convention:** `llm`
+詳細が必要な場合は以下のファイルを Read ツールで参照してください。
 
-Calls LLM services via MCP (Model Context Protocol) Streamable HTTP transport.
-Default target: `http://localhost:8090/mcp`.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `setUrl` | `"http://host:port/mcp"` | Set MCP server URL |
-| `prompt` | `"prompt text"` | Send prompt; returns LLM response |
-| `callAgent` | `["agentName", "promptText"]` or `{"agent":"name","prompt":"text","caller":"id"}` | Call named agent via MCP Gateway; blocks up to 5 minutes |
-| `status` | `""` | Query service status |
-| `listTools` | `""` | List available MCP tools |
-
-```yaml
-- states: ["0", "1"]
-  actions:
-    - actor: loader
-      method: loadJar
-      arguments: "com.scivicslab.turingworkflow.plugins:plugin-llm:1.0.0"
-
-- states: ["1", "2"]
-  actions:
-    - actor: loader
-      method: createChild
-      arguments: ["ROOT", "llm", "com.scivicslab.turingworkflow.plugins.llm.LlmActor"]
-
-- states: ["2", "3"]
-  actions:
-    - actor: llm
-      method: setUrl
-      arguments: "${llm.url}"
-
-- states: ["3", "4"]
-  actions:
-    - actor: llm
-      method: prompt
-      arguments: "Summarize: ${result}"
-```
-
----
-
-### 6.2 `plugin-prompt-builder` — Prompt assembler
-
-**Artifact:** `com.scivicslab.turingworkflow.plugins:plugin-prompt-builder:1.0.0`
-**Class:** `com.scivicslab.turingworkflow.plugins.promptbuilder.PromptBuilderActor`
-**Actor name convention:** `promptBuilder`
-
-Assembles structured prompts from constraints (warnings), background context, and a message.
-Output section headers: `[Constraints]`, `[Context]`, `[Message]`.
-Sections with no entries are omitted. `build` fails if `addMessage` was not called.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `clear` | `""` | Clear all content and reset cursors |
-| `addWarning` | `"constraint text"` | Add a constraint/warning section |
-| `addContext` | `"background text"` | Add a background context section |
-| `addMessage` | `"main message"` | Set the main message (required for `build`) |
-| `build` | `""` | Build complete prompt string |
-| `getWarningCount` | `""` | Number of warnings |
-| `getWarning` | `"0"` (index) | Get warning at index; fails if out of range |
-| `getNextWarning` | `""` | Cursor-based: get next warning; returns false when exhausted |
-| `getContextCount` | `""` | Number of contexts |
-| `getContext` | `"0"` (index) | Get context at index |
-| `getNextContext` | `""` | Cursor-based: get next context; returns false when exhausted |
-| `resetCursor` | `""` | Reset warning and context cursors to 0 |
-| `getMessage` | `""` | Get the message text |
-
-**Verification loop pattern:**
-```yaml
-# Init counter before loop
-- states: ["7", "verify-loop"]
-  label: init-verify-counter
-  actions:
-    - actor: calc
-      method: set
-      arguments: "0"
-
-# Try to get warning at current index; success → verify, failure → done
-- states: ["verify-loop", "verify-check"]
-  label: get-next-warning
-  actions:
-    - actor: promptBuilder
-      method: getWarning
-      arguments: "$(calc.get)"
-
-- states: ["verify-loop", "end"]
-  label: verify-done
-  actions:
-    - actor: out
-      method: print
-      arguments: "Verification complete."
-
-# Verify the warning and increment counter
-- states: ["verify-check", "verify-next"]
-  label: verify-warning
-  actions:
-    - actor: llm
-      method: callAgent
-      arguments: '{"agent": "${agent}", "prompt": "「${result}」は守られていましたか？OK/NG（理由付き）"}'
-
-- states: ["verify-next", "verify-loop"]
-  label: increment-counter
-  actions:
-    - actor: calc
-      method: inc
-```
-
----
-
-### 6.3 `plugin-ssh` — SSH command execution
-
-**Artifact:** `com.scivicslab.turingworkflow.plugins:plugin-ssh:1.0.0`
-**Class:** `com.scivicslab.turingworkflow.plugins.ssh.NodeActor`
-**Actor name convention:** `node-<hostname>`
-
-Executes commands on remote nodes via SSH (or locally). Used with `plugin-inventory`
-which creates `NodeActor` instances for each node in an inventory group.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `executeCommand` | `["command"]` | Run command; stream output to accumulator |
-| `executeCommandQuiet` | `["command"]` | Run command without streaming; return exitCode/stdout/stderr |
-| `executeSudoCommand` | `["command"]` | Run sudo command (requires `SUDO_PASSWORD` env var) |
-| `executeSudoCommandQuiet` | `["command"]` | Run sudo command without streaming |
-| `runWorkflow` | `["path/to/workflow.yaml"]` or `["path", maxIter]` | Load and run a sub-workflow |
-| `sleep` | `["milliseconds"]` | Pause execution |
-| `print` | `["text"]` | Print to stdout |
-| `doNothing` | `["optional message"]` | No-op |
-| `printJson` | `["path"]` | Print JSON state at path |
-| `printYaml` | `["path"]` | Print JSON state at path as YAML |
-
----
-
-### 6.4 `plugin-inventory` — Multi-node orchestration
-
-**Artifact:** `com.scivicslab.turingworkflow.plugins:plugin-inventory:1.0.0`
-**Class:** `com.scivicslab.turingworkflow.plugins.inventory.NodeGroupActor`
-**Actor name convention:** `nodeGroup`
-
-Manages a group of nodes loaded from an inventory file. Creates child `NodeActor` instances
-and dispatches actions to them in parallel using wildcard patterns.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `hasInventory` | `""` | True if inventory is loaded |
-| `createNodeActors` | `["group-name"]` | Create child NodeActors for all nodes in group |
-| `apply` | `{"actor":"node-*","method":"executeCommand","arguments":["cmd"]}` | Apply action to matching child actors in parallel |
-| `executeCommandOnAllNodes` | `["command"]` | Run command on all child node actors |
-| `runWorkflow` | `["path/to/workflow.yaml"]` | Load and run workflow |
-| `getAccumulatorSummary` | `""` | Get collected results from accumulator |
-| `printSessionSummary` | `""` | Print verification results summary (OK/WARN/ERROR counts) |
-| `getSessionId` | `""` | Get current session ID |
-| `doNothing` | `""` | No-op |
-| `printJson` | `["path"]` | Print JSON state at path |
-| `printYaml` | `["path"]` | Print JSON state at path as YAML |
-
----
-
-### 6.5 `plugin-report` — Report generation
-
-**Artifact:** `com.scivicslab.turingworkflow.plugins:plugin-report:1.0.0`
-**Class:** `com.scivicslab.turingworkflow.plugins.report.ReportBuilderActor`
-**Actor name convention:** `reportBuilder`
-
-Assembles workflow execution reports from multiple sections and sends to accumulator.
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `addWorkflowInfo` | `""` | Add workflow name/description section |
-| `addJsonStateSection` | `{"actor":"actorName","path":"optional.path"}` | Add actor JSON state as YAML section |
-| `report` | `""` | Build and send complete report to `outputMultiplexer` |
-
----
-
-## 7. Writing a Plugin Actor
-
-A plugin actor is a JAR containing a class that extends `IIActorRef`. Loaded at runtime by `loader`.
-
-```java
-public class MyActorIIAR extends IIActorRef<MyPojo> {
-
-    public MyActorIIAR(String actorName, IIActorSystem system) {
-        super(actorName, new MyPojo(), system);
-    }
-
-    @Action("doWork")
-    public ActionResult doWork(String args) {
-        String input = parseFirstArgument(args);
-        String output = object.process(input);
-        return new ActionResult(true, output);
-    }
-
-    @Action("nextItem")
-    public ActionResult nextItem(String args) {
-        boolean hasNext = object.advance();
-        return new ActionResult(hasNext, hasNext ? object.current() : "no more items");
-    }
-}
-```
-
-**Important notes:**
-- `parseFirstArgument(args)` safely handles both `"value"` and `["value"]` forms.
-- `@Action("methodName")` annotation maps YAML `method:` names to Java methods.
-- `ActionResult(true, message)` = success; `ActionResult(false, message)` = failure (triggers alternative transition).
-- The `message` of `ActionResult` becomes `${result}` for the next action.
-- Return `false` for sentinel conditions ("no more items") so the engine can fall through naturally.
-
----
-
-## 8. Real-World Example — kana-kanji-pairs.yaml
-
-```yaml
-name: kana-kanji-pairs
-
-steps:
-  - states: ["0", "1"]
-    label: load-plugin
-    actions:
-      - actor: loader
-        method: loadJar
-        arguments: "/data/jars/plugin-kana-kanji-1.0.0.jar"
-
-  - states: ["1", "2"]
-    label: create-actors
-    actions:
-      - actor: loader
-        method: createChild
-        arguments: ["ROOT", "vllm", "com.scivicslab.turingworkflow.plugins.kanakanji.VllmActor"]
-      - actor: loader
-        method: createChild
-        arguments: ["ROOT", "ocr", "com.scivicslab.turingworkflow.plugins.kanakanji.OcrActor"]
-      - actor: loader
-        method: createChild
-        arguments: ["ROOT", "pairs", "com.scivicslab.turingworkflow.plugins.kanakanji.PairsActor"]
-
-  - states: ["2", "3"]
-    label: configure
-    actions:
-      - actor: vllm
-        method: setUrl
-        arguments: "${vllm.url}"
-      - actor: vllm
-        method: setModel
-        arguments: "${vllm.model}"
-      - actor: ocr
-        method: loadFile
-        arguments: "${ocr.file}"
-      - actor: pairs
-        method: openOutput
-        arguments: "${pairs.file}"
-
-  - states: ["3", "4"]
-    label: next-page
-    actions:
-      - actor: ocr
-        method: nextPage
-
-  - states: ["3", "end"]
-    label: all-done
-    actions:
-      - actor: pairs
-        method: closeOutput
-
-  - states: ["4", "5"]
-    label: get-page-text
-    actions:
-      - actor: ocr
-        method: getPageText
-
-  - states: ["5", "6"]
-    label: step1-segment
-    actions:
-      - actor: vllm
-        method: segment
-        arguments: "${result}"
-      - actor: interpreter
-        method: putJson
-        arguments: {path: segmented, value: "${result}"}
-
-  - states: ["5", "3"]
-    label: step1-failed-skip
-    actions:
-      - actor: log
-        method: add
-        arguments: {"source": "kana-kanji", "type": "stderr", "data": "Step 1 failed, skipping page"}
-
-  - states: ["8", "3"]
-    label: step2-to-hiragana-and-write
-    actions:
-      - actor: vllm
-        method: toHiragana
-        arguments: "${segmented}"
-      - actor: pairs
-        method: writePairs
-        arguments: "${result}"
-
-  - states: ["8", "3"]
-    label: step2-failed-skip
-    actions:
-      - actor: log
-        method: add
-        arguments: {"source": "kana-kanji", "type": "stderr", "data": "Step 2 failed, skipping page"}
-
-  - states: ["!end", "end"]
-    label: catch-all
-    actions:
-      - actor: pairs
-        method: closeOutput
-      - actor: log
-        method: add
-        arguments: {"source": "kana-kanji", "type": "stderr", "data": "Workflow ended unexpectedly"}
-```
-
----
-
-## 9. Workflow Templates
-
-### Template A — Minimal linear workflow
-
-```yaml
-name: minimal-linear
-description: |
-  Load plugin, configure, process, done.
-
-steps:
-  - states: ["0", "1"]
-    label: load-plugin
-    actions:
-      - actor: loader
-        method: loadJar
-        arguments: "${plugin.jar}"
-
-  - states: ["1", "2"]
-    label: create-actor
-    actions:
-      - actor: loader
-        method: createChild
-        arguments: ["ROOT", "worker", "${worker.class}"]
-
-  - states: ["2", "3"]
-    label: configure
-    actions:
-      - actor: worker
-        method: configure
-        arguments: "${config}"
-
-  - states: ["3", "end"]
-    label: run
-    actions:
-      - actor: worker
-        method: run
-        arguments: "${input}"
-
-  - states: ["!end", "end"]
-    label: catch-all
-    actions:
-      - actor: log
-        method: add
-        arguments: {"source": "workflow", "type": "stderr", "data": "Ended unexpectedly"}
-```
-
-### Template B — LLM processing loop with promptBuilder
-
-```yaml
-name: llm-loop
-description: |
-  Load LLM + promptBuilder, build prompt, call agent in a loop.
-
-steps:
-  - states: ["0", "1"]
-    label: load-plugins
-    actions:
-      - actor: loader
-        method: loadJar
-        arguments: "com.scivicslab.turingworkflow.plugins:plugin-llm:1.0.0"
-      - actor: loader
-        method: loadJar
-        arguments: "com.scivicslab.turingworkflow.plugins:plugin-prompt-builder:1.0.0"
-
-  - states: ["1", "2"]
-    label: create-actors
-    actions:
-      - actor: loader
-        method: createChild
-        arguments: ["ROOT", "llm", "com.scivicslab.turingworkflow.plugins.llm.LlmActor"]
-      - actor: loader
-        method: createChild
-        arguments: ["ROOT", "promptBuilder", "com.scivicslab.turingworkflow.plugins.promptbuilder.PromptBuilderActor"]
-
-  - states: ["2", "3"]
-    label: configure
-    actions:
-      - actor: llm
-        method: setUrl
-        arguments: "${llm.url}"
-
-  - states: ["3", "4"]
-    label: build-prompt
-    actions:
-      - actor: promptBuilder
-        method: addWarning
-        arguments: "Reply in Japanese."
-      - actor: promptBuilder
-        method: addMessage
-        arguments: "${user.message}"
-
-  - states: ["4", "loop"]
-    label: init-counter
-    actions:
-      - actor: calc
-        method: set
-        arguments: "0"
-
-  # Loop: get item at index, process, increment
-  - states: ["loop", "process"]
-    label: get-item
-    actions:
-      - actor: promptBuilder
-        method: getWarning
-        arguments: "$(calc.get)"
-
-  - states: ["loop", "5"]
-    label: loop-done
-
-  - states: ["process", "loop"]
-    label: process-and-next
-    actions:
-      - actor: llm
-        method: prompt
-        arguments: "${result}"
-      - actor: calc
-        method: inc
-
-  - states: ["5", "end"]
-    label: finalize
-    actions:
-      - actor: out
-        method: print
-        arguments: "All done."
-
-  - states: ["!end", "end"]
-    label: catch-all
-    actions:
-      - actor: log
-        method: add
-        arguments: {"source": "workflow", "type": "stderr", "data": "Ended unexpectedly"}
-```
-
-### Template C — Multi-node infrastructure workflow
-
-```yaml
-name: multi-node-verify
-description: |
-  Load inventory, create node actors, run verification on all nodes.
-
-steps:
-  - states: ["0", "1"]
-    label: load-plugins
-    actions:
-      - actor: loader
-        method: loadJar
-        arguments: "com.scivicslab.turingworkflow.plugins:plugin-ssh:1.0.0"
-      - actor: loader
-        method: loadJar
-        arguments: "com.scivicslab.turingworkflow.plugins:plugin-inventory:1.0.0"
-
-  - states: ["1", "2"]
-    label: create-nodegroup
-    actions:
-      - actor: loader
-        method: createChild
-        arguments: ["ROOT", "nodeGroup", "com.scivicslab.turingworkflow.plugins.inventory.NodeGroupActor"]
-
-  - states: ["2", "3"]
-    label: create-node-actors
-    actions:
-      - actor: nodeGroup
-        method: createNodeActors
-        arguments: ["web-servers"]
-
-  - states: ["3", "4"]
-    label: run-verification
-    actions:
-      - actor: nodeGroup
-        method: apply
-        arguments: {"actor": "node-*", "method": "executeCommand", "arguments": ["uptime"]}
-
-  - states: ["4", "end"]
-    label: report
-    actions:
-      - actor: nodeGroup
-        method: printSessionSummary
-
-  - states: ["!end", "end"]
-    label: catch-all
-    actions:
-      - actor: log
-        method: add
-        arguments: {"source": "workflow", "type": "stderr", "data": "Ended unexpectedly"}
-```
+- `reference/built-in-actors.md` — 組み込みアクター全メソッド一覧とコード例
+- `reference/patterns.md` — 全パターンライブラリ・テンプレート・実例
+- `reference/plugins.md` — プラグイン詳細リファレンス・プラグイン開発ガイド
 
 ---
 
@@ -1106,6 +452,10 @@ When asked to generate a Turing workflow YAML, follow these rules:
     then reference with `${key}`.
 15. **Missing plugins**: if a required plugin is not installed, instruct the user to:
     `git clone` the repository, `rm -rf target`, `mvn install` the plugin, then retry.
+16. **Sub-workflow calls**: use `actor: this, method: call, arguments: ["sub.yaml"]` to invoke a
+    reusable sub-workflow. Pass parameters via `vars.set` **before** the call — the child shares
+    the parent's `vars` actor so all set variables are immediately available as `${varName}` inside
+    the sub-workflow. The sub-workflow file is resolved relative to the `-d` base directory.
 
 ---
 
