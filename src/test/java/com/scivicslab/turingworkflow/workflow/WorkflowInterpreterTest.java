@@ -19,11 +19,11 @@ package com.scivicslab.turingworkflow.workflow;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import java.io.IOException;
 import java.io.InputStream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.scivicslab.pojoactor.core.ActionResult;
@@ -44,6 +44,7 @@ import com.scivicslab.turingworkflow.workflow.Action;
  * @author devteam@scivicslab.com
  * @version 2.5.0
  */
+@Tag("J_init.02")
 @DisplayName("Workflow Interpreter Specification by Example")
 public class WorkflowInterpreterTest {
 
@@ -69,10 +70,17 @@ public class WorkflowInterpreterTest {
             super(actorName, object, system);
         }
 
-        @Override
-        public ActionResult callByActionName(String actionName, String args) {
-            return this.object.callByActionName(actionName, args);
-        }
+        @com.scivicslab.pojoactor.core.Action("add")
+        public ActionResult add(String args) { return this.object.callByActionName("add", args); }
+
+        @com.scivicslab.pojoactor.core.Action("multiply")
+        public ActionResult multiply(String args) { return this.object.callByActionName("multiply", args); }
+
+        @com.scivicslab.pojoactor.core.Action("getLastResult")
+        public ActionResult getLastResult(String args) { return this.object.callByActionName("getLastResult", args); }
+
+        @com.scivicslab.pojoactor.core.Action("greet")
+        public ActionResult greet(String args) { return this.object.callByActionName("greet", args); }
     }
 
     /**
@@ -341,232 +349,31 @@ public class WorkflowInterpreterTest {
         assertTrue(result.getResult().contains("State: end"));
     }
 
-    // ==================== XML Workflow Tests ====================
-
     /**
-     * Example 11: Load XML workflow definition.
+     * Example 11: Run YAML workflow to end state using runUntilEnd().
      */
     @Test
-    @DisplayName("Should load workflow from XML")
-    public void testLoadWorkflowFromXml() {
+    @DisplayName("Should run YAML workflow to end state using runUntilEnd()")
+    public void testRunUntilEnd() {
         Interpreter interpreter = new Interpreter.Builder()
                 .loggerName("test-interpreter")
                 .team(system)
                 .build();
 
-        InputStream xmlInput = getClass().getResourceAsStream("/workflows/simple-math.xml");
-        assertNotNull(xmlInput, "XML resource should exist");
+        InputStream yamlInput = getClass().getResourceAsStream("/workflows/simple-math.yaml");
+        interpreter.readYaml(yamlInput);
 
-        try {
-            interpreter.readXml(xmlInput);
-        } catch (Exception e) {
-            fail("Failed to read XML workflow: " + e.getMessage());
-        }
+        ActionResult result = interpreter.runUntilEnd();
 
-        MatrixCode code = interpreter.getCode();
-        assertNotNull(code, "Code should be loaded");
-        assertEquals("simple-math-workflow", code.getName());
-        assertEquals(3, code.getSteps().size(), "Should have 3 steps");
+        assertTrue(result.isSuccess(), "Workflow should complete successfully");
+        assertEquals("end", interpreter.getCurrentState(), "Should reach end state");
+        assertEquals(12, mathPlugin.getLastResult(), "Last operation result should be 12");
     }
 
-    /**
-     * Example 12: Execute XML workflow with single step.
-     */
-    @Test
-    @DisplayName("Should execute XML workflow single step")
-    public void testExecuteXmlSingleStepWorkflow() {
-        Interpreter interpreter = new Interpreter.Builder()
-                .loggerName("test-interpreter")
-                .team(system)
-                .build();
-
-        InputStream xmlInput = getClass().getResourceAsStream("/workflows/simple-math.xml");
-        try {
-            interpreter.readXml(xmlInput);
-        } catch (Exception e) {
-            fail("Failed to read XML workflow: " + e.getMessage());
-        }
-
-        // Execute first step: state 0 -> 1, action: add 10,5
-        ActionResult result = interpreter.execCode();
-
-        assertTrue(result.isSuccess(), "Step should succeed");
-        assertTrue(result.getResult().contains("State: 1"), "Should transition to state 1");
-
-        // Verify the action was executed
-        assertEquals(15, mathPlugin.getLastResult(), "Math operation should have been executed");
-    }
+    // ==================== Arguments Format Tests ====================
 
     /**
-     * Example 13: Execute XML multi-step workflow.
-     */
-    @Test
-    @DisplayName("Should execute XML multi-step workflow with state transitions")
-    public void testExecuteXmlMultiStepWorkflow() {
-        Interpreter interpreter = new Interpreter.Builder()
-                .loggerName("test-interpreter")
-                .team(system)
-                .build();
-
-        InputStream xmlInput = getClass().getResourceAsStream("/workflows/simple-math.xml");
-        try {
-            interpreter.readXml(xmlInput);
-        } catch (Exception e) {
-            fail("Failed to read XML workflow: " + e.getMessage());
-        }
-
-        // Step 1: 0 -> 1, add 10,5 (result: 15)
-        ActionResult result1 = interpreter.execCode();
-        assertTrue(result1.isSuccess());
-        assertEquals(15, mathPlugin.getLastResult());
-
-        // Step 2: 1 -> 2, multiply 3,4 (result: 12)
-        ActionResult result2 = interpreter.execCode();
-        assertTrue(result2.isSuccess());
-        assertEquals(12, mathPlugin.getLastResult());
-
-        // Step 3: 2 -> end, getLastResult (result: 12)
-        ActionResult result3 = interpreter.execCode();
-        assertTrue(result3.isSuccess());
-        assertEquals(12, mathPlugin.getLastResult());
-    }
-
-    /**
-     * Example 14: Execute XML workflow with multiple actions in one step.
-     */
-    @Test
-    @DisplayName("Should execute multiple actions in a single XML workflow step")
-    public void testExecuteXmlMultipleActionsInOneStep() {
-        Interpreter interpreter = new Interpreter.Builder()
-                .loggerName("test-interpreter")
-                .team(system)
-                .build();
-
-        InputStream xmlInput = getClass().getResourceAsStream("/workflows/multi-action.xml");
-        try {
-            interpreter.readXml(xmlInput);
-        } catch (Exception e) {
-            fail("Failed to read XML workflow: " + e.getMessage());
-        }
-
-        MatrixCode code = interpreter.getCode();
-        assertEquals("multi-action-workflow", code.getName());
-
-        Transition firstTransition = code.getSteps().get(0);
-        assertEquals(3, firstTransition.getActions().size(), "First row should have 3 actions");
-
-        // Execute the step with multiple actions
-        ActionResult result = interpreter.execCode();
-        assertTrue(result.isSuccess());
-
-        // The last action (getLastResult) doesn't change the result,
-        // so we check the result of multiply (2,4)
-        assertEquals(8, mathPlugin.getLastResult());
-    }
-
-    /**
-     * Example 15: Verify XML workflow matrix structure.
-     */
-    @Test
-    @DisplayName("Should parse XML workflow matrix structure correctly")
-    public void testXmlWorkflowMatrixStructure() {
-        Interpreter interpreter = new Interpreter.Builder()
-                .loggerName("test-interpreter")
-                .team(system)
-                .build();
-
-        InputStream xmlInput = getClass().getResourceAsStream("/workflows/simple-math.xml");
-        try {
-            interpreter.readXml(xmlInput);
-        } catch (Exception e) {
-            fail("Failed to read XML workflow: " + e.getMessage());
-        }
-
-        MatrixCode code = interpreter.getCode();
-
-        // Check first row
-        Transition row0 = code.getSteps().get(0);
-        assertEquals(2, row0.getStates().size());
-        assertEquals("0", row0.getStates().get(0));
-        assertEquals("1", row0.getStates().get(1));
-        assertEquals(1, row0.getActions().size());
-        assertEquals("math", row0.getActions().get(0).getActor());
-        assertEquals("add", row0.getActions().get(0).getMethod());
-        // arguments is now a List: ["10", "5"]
-        @SuppressWarnings("unchecked")
-        java.util.List<String> xmlArgs = (java.util.List<String>) row0.getActions().get(0).getArguments();
-        assertEquals(2, xmlArgs.size());
-        assertEquals("10", xmlArgs.get(0));
-        assertEquals("5", xmlArgs.get(1));
-
-        // Check second row
-        Transition row1 = code.getSteps().get(1);
-        assertEquals("1", row1.getStates().get(0));
-        assertEquals("2", row1.getStates().get(1));
-        assertEquals("multiply", row1.getActions().get(0).getMethod());
-    }
-
-    /**
-     * Example 16: XML workflow with complex branching.
-     */
-    @Test
-    @DisplayName("Should load complex branching XML workflow")
-    public void testComplexBranchingXmlWorkflow() {
-        Interpreter interpreter = new Interpreter.Builder()
-                .loggerName("test-interpreter")
-                .team(system)
-                .build();
-
-        InputStream xmlInput = getClass().getResourceAsStream("/workflows/complex-branching.xml");
-        assertNotNull(xmlInput, "complex-branching.xml should exist");
-
-        try {
-            interpreter.readXml(xmlInput);
-        } catch (Exception e) {
-            fail("Failed to read XML workflow: " + e.getMessage());
-        }
-
-        MatrixCode code = interpreter.getCode();
-        assertNotNull(code, "Code should be loaded");
-        assertEquals("complex-branching", code.getName());
-        assertEquals(16, code.getSteps().size(), "Should have 16 transitions");
-
-        // Verify first transition
-        Transition firstTransition = code.getSteps().get(0);
-        assertEquals("init", firstTransition.getStates().get(0));
-        assertEquals("state_A", firstTransition.getStates().get(1));
-        assertEquals("checker", firstTransition.getActions().get(0).getActor());
-        assertEquals("check_condition1", firstTransition.getActions().get(0).getMethod());
-    }
-
-    /**
-     * Example 17: Empty argument in XML action.
-     */
-    @Test
-    @DisplayName("Should handle empty arguments in XML actions")
-    public void testXmlEmptyArgument() {
-        Interpreter interpreter = new Interpreter.Builder()
-                .loggerName("test-interpreter")
-                .team(system)
-                .build();
-
-        InputStream xmlInput = getClass().getResourceAsStream("/workflows/simple-math.xml");
-        try {
-            interpreter.readXml(xmlInput);
-        } catch (Exception e) {
-            fail("Failed to read XML workflow: " + e.getMessage());
-        }
-
-        MatrixCode code = interpreter.getCode();
-        Transition lastTransition = code.getSteps().get(2);  // The last row has getLastResult with no arguments
-
-        assertNull(lastTransition.getActions().get(0).getArguments(), "No arguments should be null");
-    }
-
-    // ==================== New Arguments Format Tests ====================
-
-    /**
-     * Example 18: Load YAML workflow with arguments list format.
+     * Example 12: Load YAML workflow with arguments list format.
      */
     @Test
     @DisplayName("Should load and execute YAML workflow with arguments list format")
@@ -602,87 +409,7 @@ public class WorkflowInterpreterTest {
     }
 
     /**
-     * Example 19: Load JSON workflow with arguments list format.
-     */
-    @Test
-    @DisplayName("Should load and execute JSON workflow with arguments list format")
-    public void testJsonWithArgumentsListFormat() {
-        Interpreter interpreter = new Interpreter.Builder()
-                .loggerName("test-interpreter")
-                .team(system)
-                .build();
-
-        InputStream jsonInput = getClass().getResourceAsStream("/workflows/arguments-list-format.json");
-        assertNotNull(jsonInput, "arguments-list-format.json should exist");
-
-        try {
-            interpreter.readJson(jsonInput);
-        } catch (Exception e) {
-            fail("Failed to read JSON workflow: " + e.getMessage());
-        }
-
-        MatrixCode code = interpreter.getCode();
-        assertNotNull(code);
-        assertEquals("arguments-list-format-workflow", code.getName());
-
-        // Step 1: 0 -> 1, add ["10", "5"] (result: 15)
-        ActionResult result1 = interpreter.execCode();
-        assertTrue(result1.isSuccess());
-        assertEquals(15, mathPlugin.getLastResult());
-
-        // Step 2: 1 -> 2, multiply ["3", "4"] (result: 12)
-        ActionResult result2 = interpreter.execCode();
-        assertTrue(result2.isSuccess());
-        assertEquals(12, mathPlugin.getLastResult());
-
-        // Step 3: 2 -> end, getLastResult [] (result: 12)
-        ActionResult result3 = interpreter.execCode();
-        assertTrue(result3.isSuccess());
-        assertEquals(12, mathPlugin.getLastResult());
-    }
-
-    /**
-     * Example 20: Load XML workflow with arguments list format.
-     */
-    @Test
-    @DisplayName("Should load and execute XML workflow with arguments list format")
-    public void testXmlWithArgumentsListFormat() {
-        Interpreter interpreter = new Interpreter.Builder()
-                .loggerName("test-interpreter")
-                .team(system)
-                .build();
-
-        InputStream xmlInput = getClass().getResourceAsStream("/workflows/arguments-list-format.xml");
-        assertNotNull(xmlInput, "arguments-list-format.xml should exist");
-
-        try {
-            interpreter.readXml(xmlInput);
-        } catch (Exception e) {
-            fail("Failed to read XML workflow: " + e.getMessage());
-        }
-
-        MatrixCode code = interpreter.getCode();
-        assertNotNull(code);
-        assertEquals("arguments-list-format-workflow", code.getName());
-
-        // Step 1: 0 -> 1, add ["10", "5"] (result: 15)
-        ActionResult result1 = interpreter.execCode();
-        assertTrue(result1.isSuccess());
-        assertEquals(15, mathPlugin.getLastResult());
-
-        // Step 2: 1 -> 2, multiply ["3", "4"] (result: 12)
-        ActionResult result2 = interpreter.execCode();
-        assertTrue(result2.isSuccess());
-        assertEquals(12, mathPlugin.getLastResult());
-
-        // Step 3: 2 -> end, getLastResult [] (result: 12)
-        ActionResult result3 = interpreter.execCode();
-        assertTrue(result3.isSuccess());
-        assertEquals(12, mathPlugin.getLastResult());
-    }
-
-    /**
-     * Example 21: Load YAML workflow with mixed arguments format (string + array).
+     * Example 13: Load YAML workflow with mixed arguments format (string + array).
      * Demonstrates that both string and array formats are supported.
      */
     @Test
@@ -720,7 +447,7 @@ public class WorkflowInterpreterTest {
     }
 
     /**
-     * Example 22: Verify that omitted arguments and empty array arguments
+     * Example 14: Verify that omitted arguments and empty array arguments
      * result in the same value being passed to the actor.
      *
      * <p>When arguments are not needed, either format should work:</p>
@@ -812,7 +539,7 @@ public class WorkflowInterpreterTest {
     }
 
     /**
-     * Example 23: Verify that empty JSON array "[]" means zero arguments,
+     * Example 15: Verify that empty JSON array "[]" means zero arguments,
      * not a single null argument.
      *
      * <p>This is an important distinction in programming:</p>
@@ -882,7 +609,7 @@ public class WorkflowInterpreterTest {
     }
 
     /**
-     * Example 24: Verify that execCode() wraps around from the last Transition to the first.
+     * Example 16: Verify that execCode() wraps around from the last Transition to the first.
      *
      * <p>When the interpreter is at the end of the Transition list and fails to find a match,
      * it should wrap around to the beginning to continue searching.</p>
@@ -982,7 +709,7 @@ public class WorkflowInterpreterTest {
     }
 
     /**
-     * Example 25: Verify conditional branching with fallback.
+     * Example 17: Verify conditional branching with fallback.
      *
      * <p>Tests that when conditions fail, the interpreter continues to the next
      * matching Transition until finding one that succeeds (fallback/default case).</p>
@@ -1081,7 +808,7 @@ public class WorkflowInterpreterTest {
     }
 
     /**
-     * Example 26: Verify that YAML with 'transitions' key is accepted.
+     * Example 18: Verify that YAML with 'transitions' key is accepted.
      *
      * <p>Tests backward compatibility: both 'steps' and 'transitions' keys
      * should be accepted in YAML workflow files.</p>

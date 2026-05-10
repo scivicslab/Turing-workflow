@@ -9,7 +9,6 @@
                 </arguments>
             </action>
         </transition>
-
         <transition from="1" to="2">
             <action actor="math" method="multiply">
                 <arguments>
@@ -18,9 +17,8 @@
                 </arguments>
             </action>
         </transition>
-
         <transition from="2" to="end">
-            <action actor="math" method="getLastResult"/>
+            <action actor="math" method="getLastResult"></action>
         </transition>
     </steps>
 </workflow>

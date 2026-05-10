@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.InputStream;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -36,6 +37,7 @@ import com.scivicslab.turingworkflow.workflow.WorkflowXsltTransformer;
  * @author devteam@scivicslab.com
  * @version 2.5.0
  */
+@Tag("J_viz")
 @DisplayName("Workflow XSLT Transformer Tests")
 public class WorkflowXsltTransformerTest {
 

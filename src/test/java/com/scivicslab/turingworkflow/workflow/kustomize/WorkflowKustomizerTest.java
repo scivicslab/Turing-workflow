@@ -19,6 +19,7 @@ package com.scivicslab.turingworkflow.workflow.kustomize;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author devteam@scivicslab.com
  * @since 2.9.0
  */
+@Tag("J_kust.01")
+@Tag("Y_kust.01")
 class WorkflowKustomizerTest {
 
     private WorkflowKustomizer kustomizer;
@@ -55,7 +58,8 @@ class WorkflowKustomizerTest {
     }
 
     @Test
-    @DisplayName("Should load base workflow without patches")
+    @Tag("J_kust.01")
+@DisplayName("Should load base workflow without patches")
     void testLoadBaseWorkflow() throws IOException {
         Path basePath = testResourcesPath.resolve("base");
         Map<String, Map<String, Object>> result = kustomizer.build(basePath);

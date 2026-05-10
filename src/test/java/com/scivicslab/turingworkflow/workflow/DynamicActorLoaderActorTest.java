@@ -21,8 +21,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
 import com.scivicslab.turingworkflow.workflow.DynamicActorLoaderActor;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
@@ -34,6 +36,8 @@ import com.scivicslab.turingworkflow.workflow.Interpreter;
  *
  * @author devteam@scivicslab.com
  */
+@Tag("J_load.01")
+@Tag("Y_load.01")
 @DisplayName("Dynamic Actor Loader Specification by Example")
 public class DynamicActorLoaderActorTest {
 
@@ -118,18 +122,16 @@ public class DynamicActorLoaderActorTest {
         system.addIIActor(new DynamicActorLoaderIIAR("loader", loader, system));
 
         // Create simple workflow that uses loader
-        String workflowXml = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <workflow name="test-dynamic">
-                <steps>
-                    <transition from="0" to="end">
-                        <action actor="loader" method="listProviders"></action>
-                    </transition>
-                </steps>
-            </workflow>
+        String workflowYaml = """
+            name: test-dynamic
+            steps:
+              - states: ["0", "end"]
+                actions:
+                  - actor: loader
+                    method: listProviders
             """;
 
-        interpreter.readXml(new java.io.ByteArrayInputStream(workflowXml.getBytes()));
+        interpreter.readYaml(new java.io.ByteArrayInputStream(workflowYaml.getBytes()));
         ActionResult result = interpreter.execCode();
 
         assertTrue(result.isSuccess(), "Workflow should execute successfully");
@@ -231,10 +233,26 @@ public class DynamicActorLoaderActorTest {
             super(actorName, object, system);
         }
 
-        @Override
-        public ActionResult callByActionName(String actionName, String args) {
-            return this.object.callByActionName(actionName, args);
-        }
+        @Action("loadJar")
+        public ActionResult loadJar(String args) { return this.object.callByActionName("loadJar", args); }
+
+        @Action("createChild")
+        public ActionResult createChild(String args) { return this.object.callByActionName("createChild", args); }
+
+        @Action("listLoadedJars")
+        public ActionResult listLoadedJars(String args) { return this.object.callByActionName("listLoadedJars", args); }
+
+        @Action("loadFromJar")
+        public ActionResult loadFromJar(String args) { return this.object.callByActionName("loadFromJar", args); }
+
+        @Action("createFromProvider")
+        public ActionResult createFromProvider(String args) { return this.object.callByActionName("createFromProvider", args); }
+
+        @Action("listProviders")
+        public ActionResult listProviders(String args) { return this.object.callByActionName("listProviders", args); }
+
+        @Action("loadProvidersFromJar")
+        public ActionResult loadProvidersFromJar(String args) { return this.object.callByActionName("loadProvidersFromJar", args); }
     }
 
     /**
@@ -253,11 +271,6 @@ public class DynamicActorLoaderActorTest {
     private static class TestActorIIAR extends IIActorRef<TestActor> {
         public TestActorIIAR(String actorName, TestActor object, IIActorSystem system) {
             super(actorName, object, system);
-        }
-
-        @Override
-        public ActionResult callByActionName(String actionName, String args) {
-            return this.object.callByActionName(actionName, args);
         }
     }
 }

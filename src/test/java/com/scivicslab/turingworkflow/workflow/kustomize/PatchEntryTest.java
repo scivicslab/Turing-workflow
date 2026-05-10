@@ -18,6 +18,7 @@
 package com.scivicslab.turingworkflow.workflow.kustomize;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -28,6 +29,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author devteam@scivicslab.com
  * @since 2.9.1
  */
+@Tag("Y_kust.01")
+@Tag("J_kust.01")
 class PatchEntryTest {
 
     @Test

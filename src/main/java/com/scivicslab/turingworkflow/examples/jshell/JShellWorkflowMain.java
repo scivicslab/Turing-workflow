@@ -83,17 +83,17 @@ public class JShellWorkflowMain {
             System.out.println("[メイン] アクター 'interpreter' をシステムに登録完了");
             System.out.println("[メイン] → thread poolなどのインフラを活用可能");
 
-            // ステップ7: ワークフローXMLをロード
-            System.out.println("\n[ステップ7] ワークフローXMLをロード");
+            // ステップ7: ワークフローYAMLをロード
+            System.out.println("\n[ステップ7] ワークフローYAMLをロード");
             InputStream xmlStream = JShellWorkflowMain.class
                 .getClassLoader()
-                .getResourceAsStream("examples/jshell-calculation.xml");
+                .getResourceAsStream("examples/jshell-calculation.yaml");
 
             if (xmlStream == null) {
-                throw new RuntimeException("jshell-calculation.xml が見つかりません");
+                throw new RuntimeException("jshell-calculation.yaml が見つかりません");
             }
 
-            interpreter.readXml(xmlStream);
+            interpreter.readYaml(xmlStream);
             System.out.println("[メイン] ワークフローロード完了");
             System.out.println("[メイン] - 読み込んだワークフロー: " +
                              interpreter.getCode().getName());

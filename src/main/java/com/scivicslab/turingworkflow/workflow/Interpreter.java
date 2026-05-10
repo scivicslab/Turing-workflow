@@ -35,15 +35,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -51,8 +42,6 @@ import com.scivicslab.pojoactor.core.ActionResult;
 import com.scivicslab.turingworkflow.workflow.kustomize.WorkflowKustomizer;
 
 import org.yaml.snakeyaml.Yaml;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.commons.jexl3.JexlBuilder;
 import org.apache.commons.jexl3.JexlContext;
@@ -647,120 +636,6 @@ public class Interpreter {
     }
 
     /**
-     * Reads and parses a workflow definition from a JSON input stream.
-     *
-     * @param jsonInput the JSON input stream containing the workflow definition
-     * @throws IOException if an I/O error occurs during parsing
-     */
-    public void readJson(InputStream jsonInput) throws IOException {
-        ObjectMapper mapper = new ObjectMapper();
-        code = mapper.readValue(jsonInput, MatrixCode.class);
-    }
-
-    /**
-     * Reads and parses a workflow definition from an XML input stream.
-     *
-     * <p>The XML format follows this structure:</p>
-     * <pre>{@code
-     * <workflow name="workflow-name">
-     *   <steps>
-     *     <transition from="state1" to="state2">
-     *       <action actor="actorName" method="methodName">argument</action>
-     *     </transition>
-     *   </steps>
-     * </workflow>
-     * }</pre>
-     *
-     * @param xmlInput the XML input stream containing the workflow definition
-     * @throws IOException if an I/O error occurs during parsing
-     * @throws ParserConfigurationException if the XML parser cannot be configured
-     * @throws SAXException if the XML is malformed
-     */
-    public void readXml(InputStream xmlInput) throws IOException, ParserConfigurationException, SAXException {
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        DocumentBuilder builder = factory.newDocumentBuilder();
-        Document doc = builder.parse(xmlInput);
-        doc.getDocumentElement().normalize();
-
-        // Create MatrixCode instance
-        code = new MatrixCode();
-
-        // Get workflow name
-        Element workflowElement = doc.getDocumentElement();
-        String workflowName = workflowElement.getAttribute("name");
-        code.setName(workflowName);
-
-        // Parse steps
-        List<Transition> steps = new ArrayList<>();
-        NodeList stepsNodes = workflowElement.getElementsByTagName("steps");
-
-        if (stepsNodes.getLength() > 0) {
-            Element stepsElement = (Element) stepsNodes.item(0);
-            NodeList transitionNodes = stepsElement.getElementsByTagName("transition");
-
-            for (int i = 0; i < transitionNodes.getLength(); i++) {
-                Element transitionElement = (Element) transitionNodes.item(i);
-
-                // Create Transition instance
-                Transition transition = new Transition();
-
-                // Parse states (from, to)
-                List<String> states = new ArrayList<>();
-                states.add(transitionElement.getAttribute("from"));
-                states.add(transitionElement.getAttribute("to"));
-                transition.setStates(states);
-
-                // Parse actions
-                List<Action> actions = new ArrayList<>();
-                NodeList actionNodes = transitionElement.getElementsByTagName("action");
-
-                for (int j = 0; j < actionNodes.getLength(); j++) {
-                    Element actionElement = (Element) actionNodes.item(j);
-
-                    Action action = new Action();
-                    action.setActor(actionElement.getAttribute("actor"));
-                    action.setMethod(actionElement.getAttribute("method"));
-
-                    // Check for new <arguments> element
-                    NodeList argumentsNodes = actionElement.getElementsByTagName("arguments");
-                    if (argumentsNodes.getLength() > 0) {
-                        Element argumentsElement = (Element) argumentsNodes.item(0);
-                        NodeList argNodes = argumentsElement.getElementsByTagName("arg");
-
-                        if (argNodes.getLength() > 0) {
-                            // Parse as list of arguments: <arguments><arg>a</arg><arg>b</arg></arguments>
-                            List<String> argsList = new ArrayList<>();
-                            for (int k = 0; k < argNodes.getLength(); k++) {
-                                Element argElement = (Element) argNodes.item(k);
-                                argsList.add(argElement.getTextContent().trim());
-                            }
-                            action.setArguments(argsList);
-                        } else {
-                            // Check if <arguments> has text content (single string format)
-                            String textContent = argumentsElement.getTextContent().trim();
-                            if (!textContent.isEmpty()) {
-                                // Single string argument: <arguments>value</arguments>
-                                action.setArguments(textContent);
-                            } else {
-                                // Empty <arguments/> element
-                                action.setArguments(new ArrayList<>());
-                            }
-                        }
-                    }
-                    // No arguments element means no arguments
-
-                    actions.add(action);
-                }
-
-                transition.setActions(actions);
-                steps.add(transition);
-            }
-        }
-
-        code.setSteps(steps);
-    }
-
-    /**
      * Executes the loaded workflow code.
      *
      * <p>This method implements finite automaton semantics:</p>
@@ -977,12 +852,7 @@ public class Interpreter {
                 }
             }
 
-            // Determine file type and load
-            if (workflowFile.endsWith(".json")) {
-                readJson(stream);
-            } else {
-                readYaml(stream);
-            }
+            readYaml(stream);
 
             // Run until end
             return runUntilEnd(maxIterations);

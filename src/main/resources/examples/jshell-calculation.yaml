@@ -1,0 +1,17 @@
+name: jshell-calculation
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: jshellCalc
+        method: eval
+        arguments: ["10 + 5"]
+  - states: ["1", "2"]
+    actions:
+      - actor: jshellCalc
+        method: eval
+        arguments: ["Math.sqrt(16)"]
+  - states: ["2", "end"]
+    actions:
+      - actor: jshellCalc
+        method: getLastResult
+        execution: direct

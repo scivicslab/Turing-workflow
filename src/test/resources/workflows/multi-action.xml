@@ -4,8 +4,8 @@
         <transition from="0" to="1">
             <action actor="math" method="add">
                 <arguments>
-                    <arg>5</arg>
                     <arg>3</arg>
+                    <arg>5</arg>
                 </arguments>
             </action>
             <action actor="math" method="multiply">
@@ -14,7 +14,10 @@
                     <arg>4</arg>
                 </arguments>
             </action>
-            <action actor="math" method="getLastResult"/>
+            <action actor="math" method="getLastResult"></action>
+        </transition>
+        <transition from="1" to="end">
+            <action actor="math" method="getLastResult"></action>
         </transition>
     </steps>
 </workflow>

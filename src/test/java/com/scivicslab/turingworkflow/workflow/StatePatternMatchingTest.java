@@ -25,6 +25,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +46,7 @@ import com.scivicslab.pojoactor.core.ActionResult;
  * @author devteam@scivicslab.com
  * @version 2.9.0
  */
+@Tag("Y_base")
 @DisplayName("State Pattern Matching Specification")
 public class StatePatternMatchingTest {
 

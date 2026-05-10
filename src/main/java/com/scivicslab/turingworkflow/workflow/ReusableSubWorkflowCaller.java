@@ -21,8 +21,8 @@ import java.io.InputStream;
 
 import org.json.JSONArray;
 
+import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
-import com.scivicslab.pojoactor.core.CallableByActionName;
 
 /**
  * Reusable sub-workflow caller that reuses a single Interpreter instance.
@@ -73,11 +73,9 @@ import com.scivicslab.pojoactor.core.CallableByActionName;
  *
  * <h2>Usage Example:</h2>
  * <pre>{@code
- * // Create ReusableSubWorkflowCaller actor
- * ReusableSubWorkflowCaller caller = new ReusableSubWorkflowCaller(system);
- * IIActorRef<ReusableSubWorkflowCaller> ref =
- *     new IIActorRef<>("caller", caller, system);
- * system.addIIActor(ref);
+ * // Create ReusableSubWorkflowCaller actor and add to system
+ * ReusableSubWorkflowCaller caller = new ReusableSubWorkflowCaller("caller", system);
+ * system.addIIActor(caller);
  *
  * // In workflow YAML:
  * matrix:
@@ -106,11 +104,9 @@ import com.scivicslab.pojoactor.core.CallableByActionName;
  * @see SubWorkflowCaller
  * @see Interpreter#reset()
  * @see IIActorSystem
- * @see CallableByActionName
  */
-public class ReusableSubWorkflowCaller implements CallableByActionName {
+public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
 
-    private final IIActorSystem system;
     private final Interpreter reusableInterpreter;
     private int callCount = 0;
 
@@ -120,14 +116,12 @@ public class ReusableSubWorkflowCaller implements CallableByActionName {
      * <p>Creates a single {@link Interpreter} instance that will be reused
      * across all sub-workflow calls.</p>
      *
+     * @param name the actor name used to register this actor in the system
      * @param system the actor system to use for sub-workflow execution.
      *               This system is shared between main and sub-workflows.
      */
-    public ReusableSubWorkflowCaller(IIActorSystem system) {
-        if (system == null) {
-            throw new IllegalArgumentException("ActorSystem cannot be null");
-        }
-        this.system = system;
+    public ReusableSubWorkflowCaller(String name, IIActorSystem system) {
+        super(name, null, system);
 
         // Create the reusable Interpreter instance
         this.reusableInterpreter = new Interpreter.Builder()
@@ -137,24 +131,17 @@ public class ReusableSubWorkflowCaller implements CallableByActionName {
     }
 
     /**
-     * Executes actions by name.
+     * Calls the specified sub-workflow synchronously using the reusable Interpreter.
      *
-     * <p>Supported actions:</p>
-     * <ul>
-     *   <li>{@code call} - Calls a sub-workflow. The {@code args} parameter
-     *       should contain the YAML filename (e.g., "my-workflow.yaml")</li>
-     * </ul>
+     * <p>The {@code args} parameter should contain the YAML filename
+     * (e.g., "my-workflow.yaml"), either as a plain string or as a JSON array.</p>
      *
-     * @param actionName the name of the action to execute
-     * @param args the arguments for the action (YAML filename for "call" action)
+     * @param args the YAML filename (plain string or JSON array)
      * @return {@link ActionResult} indicating success or failure
      */
-    @Override
-    public ActionResult callByActionName(String actionName, String args) {
-        if ("call".equals(actionName)) {
-            return callSubWorkflow(args);
-        }
-        return new ActionResult(false, "Unknown action: " + actionName);
+    @Action("call")
+    public synchronized ActionResult call(String args) {
+        return callSubWorkflow(args);
     }
 
     /**
@@ -178,9 +165,6 @@ public class ReusableSubWorkflowCaller implements CallableByActionName {
     /**
      * Calls a sub-workflow synchronously using the reusable Interpreter.
      *
-     * <p>This method is synchronized to ensure thread safety when reusing
-     * the Interpreter instance. Only one sub-workflow can execute at a time.</p>
-     *
      * <p><strong>Important</strong>: This method resets the Interpreter state
      * before each execution using {@link Interpreter#reset()}.</p>
      *
@@ -189,7 +173,7 @@ public class ReusableSubWorkflowCaller implements CallableByActionName {
      *                     Can be a JSON array (e.g., {@code ["filename.yaml"]}) or plain string.
      * @return {@link ActionResult} indicating success or failure
      */
-    private synchronized ActionResult callSubWorkflow(String yamlFileName) {
+    private ActionResult callSubWorkflow(String yamlFileName) {
         String actualFileName = getFirstArg(yamlFileName);
         if (actualFileName == null || actualFileName.trim().isEmpty()) {
             return new ActionResult(false, "YAML filename cannot be null or empty");

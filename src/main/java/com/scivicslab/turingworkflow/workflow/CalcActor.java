@@ -10,6 +10,7 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
+import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
 import org.apache.commons.jexl3.*;
 
@@ -38,26 +39,9 @@ public class CalcActor extends IIActorRef<double[]> {
         super(name, new double[]{0.0}, system);
     }
 
-    @Override
-    public ActionResult callByActionName(String actionName, String args) {
+    @Action("set")
+    public ActionResult set(String args) {
         String arg = parseFirstArgument(args);
-        return switch (actionName) {
-            case "set"   -> set(arg);
-            case "get"   -> get();
-            case "inc"   -> inc();
-            case "dec"   -> dec();
-            case "add"   -> arithmetic(arg, '+');
-            case "sub"   -> arithmetic(arg, '-');
-            case "mul"   -> arithmetic(arg, '*');
-            case "div"   -> arithmetic(arg, '/');
-            case "mod"   -> arithmetic(arg, '%');
-            case "reset" -> reset();
-            case "eval"  -> eval(arg);
-            default      -> super.callByActionName(actionName, args);
-        };
-    }
-
-    private ActionResult set(String arg) {
         try {
             object[0] = Double.parseDouble(arg.trim());
             return new ActionResult(true, format(object[0]));
@@ -66,21 +50,67 @@ public class CalcActor extends IIActorRef<double[]> {
         }
     }
 
-    private ActionResult get() {
+    @Action("get")
+    public ActionResult get(String args) {
         return new ActionResult(true, format(object[0]));
     }
 
-    private ActionResult inc() {
+    @Action("inc")
+    public ActionResult inc(String args) {
         return new ActionResult(true, format(++object[0]));
     }
 
-    private ActionResult dec() {
+    @Action("dec")
+    public ActionResult dec(String args) {
         return new ActionResult(true, format(--object[0]));
     }
 
-    private ActionResult reset() {
+    @Action("add")
+    public ActionResult add(String args) {
+        return arithmetic(parseFirstArgument(args), '+');
+    }
+
+    @Action("sub")
+    public ActionResult sub(String args) {
+        return arithmetic(parseFirstArgument(args), '-');
+    }
+
+    @Action("mul")
+    public ActionResult mul(String args) {
+        return arithmetic(parseFirstArgument(args), '*');
+    }
+
+    @Action("div")
+    public ActionResult div(String args) {
+        return arithmetic(parseFirstArgument(args), '/');
+    }
+
+    @Action("mod")
+    public ActionResult mod(String args) {
+        return arithmetic(parseFirstArgument(args), '%');
+    }
+
+    @Action("reset")
+    public ActionResult reset(String args) {
         object[0] = 0.0;
         return new ActionResult(true, "0");
+    }
+
+    @Action("eval")
+    public ActionResult eval(String args) {
+        String expression = parseFirstArgument(args);
+        try {
+            JexlContext ctx = new MapContext();
+            ctx.set("v", object[0]);
+            Object result = JEXL.createExpression(expression).evaluate(ctx);
+            if (result instanceof Number n) {
+                object[0] = n.doubleValue();
+                return new ActionResult(true, format(object[0]));
+            }
+            return new ActionResult(true, String.valueOf(result));
+        } catch (Exception e) {
+            return new ActionResult(false, "calc.eval: " + e.getMessage());
+        }
     }
 
     private ActionResult arithmetic(String arg, char op) {
@@ -97,21 +127,6 @@ public class CalcActor extends IIActorRef<double[]> {
             return new ActionResult(true, format(object[0]));
         } catch (NumberFormatException e) {
             return new ActionResult(false, "calc." + op + ": invalid number: " + arg);
-        }
-    }
-
-    private ActionResult eval(String expression) {
-        try {
-            JexlContext ctx = new MapContext();
-            ctx.set("v", object[0]);
-            Object result = JEXL.createExpression(expression).evaluate(ctx);
-            if (result instanceof Number n) {
-                object[0] = n.doubleValue();
-                return new ActionResult(true, format(object[0]));
-            }
-            return new ActionResult(true, String.valueOf(result));
-        } catch (Exception e) {
-            return new ActionResult(false, "calc.eval: " + e.getMessage());
         }
     }
 

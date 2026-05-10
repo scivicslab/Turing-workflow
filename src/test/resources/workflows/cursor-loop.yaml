@@ -1,0 +1,20 @@
+name: cursor-loop
+steps:
+  - states: ["0", "loop"]
+    actions:
+      - actor: calc:count
+        method: set
+        arguments: "0"
+  - states: ["loop", "process"]
+    actions:
+      - actor: cursorActor
+        method: getNext
+  - states: ["loop", "end"]
+    actions:
+      - actor: out
+        method: print
+        arguments: "All items processed."
+  - states: ["process", "loop"]
+    actions:
+      - actor: calc:count
+        method: inc

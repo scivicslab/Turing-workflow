@@ -17,16 +17,10 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 import org.json.JSONObject;
 
 import com.scivicslab.pojoactor.core.Action;
+import com.scivicslab.pojoactor.core.ActionDispatcher;
 import com.scivicslab.pojoactor.core.ActorRef;
 import com.scivicslab.pojoactor.core.CallableByActionName;
 import com.scivicslab.pojoactor.core.ActionResult;
@@ -44,13 +38,7 @@ import com.scivicslab.pojoactor.core.ActionResult;
  */
 public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByActionName {
 
-    private static final Logger logger = Logger.getLogger(IIActorRef.class.getName());
-
-    /**
-     * Map of action names to methods discovered via @Action annotation.
-     * Populated lazily on first callByActionName invocation.
-     */
-    private Map<String, Method> actionMethods = null;
+    private final ActionDispatcher dispatcher = new ActionDispatcher(this);
 
     /**
      * Constructs a new IIActorRef with the specified actor name and object.
@@ -74,112 +62,23 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     }
 
     /**
-     * Discovers methods annotated with @Action on the IIActorRef subclass.
-     *
-     * <p>This method scans the concrete IIActorRef implementation for methods
-     * annotated with {@link Action}. This keeps the POJO clean - the wrapped
-     * object doesn't need to know about workflow-related annotations.</p>
-     *
-     * <p>Valid action methods must:</p>
-     * <ul>
-     *   <li>Return {@link ActionResult}</li>
-     *   <li>Accept a single {@code String} parameter</li>
-     * </ul>
-     *
-     * <p>Discovery is performed lazily on first call and cached for subsequent calls.</p>
-     */
-    private void discoverActionMethods() {
-        if (actionMethods != null) {
-            return; // Already discovered
-        }
-
-        actionMethods = new HashMap<>();
-
-        // Scan IIActorRef subclass methods
-        for (Method method : this.getClass().getMethods()) {
-            Action action = method.getAnnotation(Action.class);
-            if (action == null) {
-                continue;
-            }
-
-            // Validate method signature: ActionResult methodName(String args)
-            if (method.getReturnType() != ActionResult.class) {
-                logger.warning(String.format(
-                    "@Action method %s.%s has invalid return type %s (expected ActionResult)",
-                    this.getClass().getSimpleName(), method.getName(), method.getReturnType().getSimpleName()));
-                continue;
-            }
-
-            Class<?>[] params = method.getParameterTypes();
-            if (params.length != 1 || params[0] != String.class) {
-                logger.warning(String.format(
-                    "@Action method %s.%s has invalid parameters (expected single String parameter)"
-                    + " [params.length=%d, params[0]=%s, params[0].classLoader=%s, String.class.classLoader=%s,"
-                    + " method.declaringClass=%s, method.declaringClass.classLoader=%s]",
-                    this.getClass().getSimpleName(), method.getName(),
-                    params.length,
-                    params.length > 0 ? params[0].getName() : "N/A",
-                    params.length > 0 ? params[0].getClassLoader() : "N/A",
-                    String.class.getClassLoader(),
-                    method.getDeclaringClass().getName(),
-                    method.getDeclaringClass().getClassLoader()));
-                continue;
-            }
-
-            String actionName = action.value();
-            if (actionMethods.containsKey(actionName)) {
-                logger.warning(String.format(
-                    "Duplicate @Action(\"%s\") found on %s.%s (already defined)",
-                    actionName, this.getClass().getSimpleName(), method.getName()));
-                continue;
-            }
-
-            actionMethods.put(actionName, method);
-            logger.fine(String.format("Discovered @Action(\"%s\") -> %s.%s",
-                actionName, this.getClass().getSimpleName(), method.getName()));
-        }
-
-        logger.fine(String.format("Discovered %d @Action methods on %s",
-            actionMethods.size(), this.getClass().getSimpleName()));
-    }
-
-    /**
-     * Invokes an @Action annotated method on this IIActorRef instance.
+     * Invokes the {@link Action @Action}-annotated method whose name matches {@code actionName}.
+     * Delegates to {@link ActionDispatcher} from POJO-actor.
      *
      * @param actionName the action name
      * @param args the arguments string
      * @return ActionResult if handled, null if no matching @Action method
      */
     protected ActionResult invokeAnnotatedAction(String actionName, String args) {
-        discoverActionMethods();
-
-        Method method = actionMethods.get(actionName);
-        if (method == null) {
-            return null; // Not found, let caller handle fallback
-        }
-
-        try {
-            return (ActionResult) method.invoke(this, args);
-        } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            String message = cause != null ? cause.getMessage() : e.getMessage();
-            logger.log(Level.WARNING, "Error invoking @Action " + actionName, e);
-            return new ActionResult(false, "Error in " + actionName + ": " + message);
-        } catch (IllegalAccessException e) {
-            logger.log(Level.SEVERE, "Cannot access @Action method " + actionName, e);
-            return new ActionResult(false, "Cannot access " + actionName + ": " + e.getMessage());
-        }
+        return dispatcher.invoke(actionName, args);
     }
 
     /**
-     * Checks if an action name is registered via @Action annotation.
-     *
-     * @param actionName the action name to check
-     * @return true if the action is registered
+     * Returns {@code true} if an {@link Action @Action}-annotated method is registered
+     * for the given name.
      */
     protected boolean hasAnnotatedAction(String actionName) {
-        discoverActionMethods();
-        return actionMethods.containsKey(actionName);
+        return dispatcher.has(actionName);
     }
 
 

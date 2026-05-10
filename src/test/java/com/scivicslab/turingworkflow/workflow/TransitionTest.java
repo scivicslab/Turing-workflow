@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -33,6 +34,7 @@ import org.yaml.snakeyaml.LoaderOptions;
  *
  * @author devteam@scivicslab.com
  */
+@Tag("Y_init.01")
 @DisplayName("Transition Tests")
 public class TransitionTest {
 
@@ -150,6 +152,34 @@ public class TransitionTest {
 
         assertEquals(1, code.getSteps().size());
         assertNull(code.getSteps().get(0).getNote());
+    }
+
+    @Test
+    @DisplayName("Should deserialize Action arguments from YAML")
+    public void testYamlDeserializationWithArguments() {
+        String yaml = """
+            name: arg-workflow
+            steps:
+              - states: ["0", "end"]
+                actions:
+                  - actor: greeter
+                    method: hello
+                    arguments:
+                      - "World"
+                      - "!"
+            """;
+
+        LoaderOptions options = new LoaderOptions();
+        Yaml yamlParser = new Yaml(new Constructor(MatrixCode.class, options));
+        MatrixCode code = yamlParser.load(yaml);
+
+        Action a = code.getSteps().get(0).getActions().get(0);
+        assertEquals("greeter", a.getActor());
+        assertEquals("hello", a.getMethod());
+        assertNotNull(a.getArguments());
+        List<?> args = (List<?>) a.getArguments();
+        assertEquals(2, args.size());
+        assertEquals("World", args.get(0));
     }
 
     @Test

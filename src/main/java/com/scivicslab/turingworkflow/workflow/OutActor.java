@@ -10,6 +10,7 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
+import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
 
 /**
@@ -28,28 +29,22 @@ public class OutActor extends IIActorRef<Void> {
         super(name, null, system);
     }
 
-    @Override
-    public ActionResult callByActionName(String actionName, String args) {
+    @Action("print")
+    public ActionResult print(String args) {
         String msg = parseFirstArgument(args);
-        return switch (actionName) {
-            case "print"  -> print(msg);
-            case "error"  -> error(msg);
-            case "printf" -> printf(args);
-            default       -> super.callByActionName(actionName, args);
-        };
-    }
-
-    private ActionResult print(String msg) {
         System.out.println(msg);
         return new ActionResult(true, msg);
     }
 
-    private ActionResult error(String msg) {
+    @Action("error")
+    public ActionResult error(String args) {
+        String msg = parseFirstArgument(args);
         System.err.println(msg);
         return new ActionResult(true, msg);
     }
 
-    private ActionResult printf(String args) {
+    @Action("printf")
+    public ActionResult printf(String args) {
         try {
             org.json.JSONArray arr = new org.json.JSONArray(args);
             String fmt = arr.getString(0);

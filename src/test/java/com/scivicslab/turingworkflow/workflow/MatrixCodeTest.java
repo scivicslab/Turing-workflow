@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -34,6 +35,7 @@ import org.yaml.snakeyaml.LoaderOptions;
  *
  * @author devteam@scivicslab.com
  */
+@Tag("J_base.02")
 @DisplayName("MatrixCode Tests")
 public class MatrixCodeTest {
 

@@ -1,0 +1,11 @@
+name: jexl-counter-loop
+steps:
+  - states: ["jexl:n < 5", "jexl:n + 1"]
+    actions:
+      - actor: calc:count
+        method: inc
+  - states: ["jexl:n >= 5", "end"]
+    actions:
+      - actor: out
+        method: print
+        arguments: "Loop finished."

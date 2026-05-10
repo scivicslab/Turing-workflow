@@ -150,24 +150,6 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
                     logger.log(Level.SEVERE, String.format("IOException: %s", arg), e);
                     message = "IO error: " + arg;
                 }
-            } else if (actionName.equals("readJson")) {
-                try (InputStream input = new FileInputStream(new File(arg))) {
-                    this.tell((Interpreter i) -> {
-                        try {
-                            i.readJson(input);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    }).get();
-                    success = true;
-                    message = "JSON loaded successfully";
-                } catch (FileNotFoundException e) {
-                    logger.log(Level.SEVERE, String.format("file not found: %s", arg), e);
-                    message = "File not found: " + arg;
-                } catch (IOException e) {
-                    logger.log(Level.SEVERE, String.format("IOException: %s", arg), e);
-                    message = "IO error: " + arg;
-                }
             } else if (actionName.equals("sleep")) {
                 try {
                     long millis = Long.parseLong(arg);

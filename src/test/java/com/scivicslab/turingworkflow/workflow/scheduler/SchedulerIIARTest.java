@@ -25,8 +25,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
 import com.scivicslab.pojoactor.core.CallableByActionName;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
@@ -41,6 +43,7 @@ import com.scivicslab.turingworkflow.workflow.IIActorSystem;
  * @author devteam@scivicslab.com
  * @since 2.11.0
  */
+@Tag("J_sched")
 @DisplayName("SchedulerIIAR (Workflow) Specification by Example")
 public class SchedulerIIARTest {
 
@@ -94,10 +97,8 @@ public class SchedulerIIARTest {
             super(actorName, object, system);
         }
 
-        @Override
-        public ActionResult callByActionName(String actionName, String args) {
-            return this.object.callByActionName(actionName, args);
-        }
+        @Action("increment")
+        public ActionResult increment(String args) { return this.object.callByActionName("increment", args); }
     }
 
     /**

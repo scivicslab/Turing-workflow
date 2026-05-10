@@ -1,0 +1,34 @@
+name: list-actor-loop
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: list:items
+        method: add
+        arguments: "Apple"
+      - actor: list:items
+        method: add
+        arguments: "Banana"
+      - actor: list:items
+        method: add
+        arguments: "Cherry"
+  - states: ["1", "loop"]
+    actions:
+      - actor: calc:i
+        method: set
+        arguments: "0"
+  - states: ["loop", "process"]
+    actions:
+      - actor: list:items
+        method: get
+        arguments: "$(calc:i.get)"
+  - states: ["loop", "end"]
+    actions:
+      - actor: out
+        method: print
+        arguments: "All items processed."
+  - states: ["process", "loop"]
+    actions:
+      - actor: calc:count
+        method: inc
+      - actor: calc:i
+        method: inc

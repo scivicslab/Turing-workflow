@@ -10,6 +10,7 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
+import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
 import org.json.JSONArray;
 
@@ -42,30 +43,16 @@ public class ListActor extends IIActorRef<List<String>> {
         super(name, new ArrayList<>(), system);
     }
 
-    @Override
-    public ActionResult callByActionName(String actionName, String args) {
-        String arg = parseFirstArgument(args);
-        return switch (actionName) {
-            case "add"      -> add(arg);
-            case "get"      -> get(arg);
-            case "set"      -> set(args);
-            case "remove"   -> remove(arg);
-            case "size"     -> size();
-            case "isEmpty"  -> isEmpty();
-            case "clear"    -> clear();
-            case "contains" -> contains(arg);
-            case "indexOf"  -> indexOf(arg);
-            case "join"     -> join(arg);
-            default         -> super.callByActionName(actionName, args);
-        };
-    }
-
-    private ActionResult add(String value) {
+    @Action("add")
+    public ActionResult add(String args) {
+        String value = parseFirstArgument(args);
         object.add(value);
         return new ActionResult(true, "true");
     }
 
-    private ActionResult get(String indexStr) {
+    @Action("get")
+    public ActionResult get(String args) {
+        String indexStr = parseFirstArgument(args);
         try {
             int i = (indexStr == null || indexStr.isBlank()) ? 0 : Integer.parseInt(indexStr.trim());
             if (i < 0 || i >= object.size()) {
@@ -78,7 +65,8 @@ public class ListActor extends IIActorRef<List<String>> {
         }
     }
 
-    private ActionResult set(String args) {
+    @Action("set")
+    public ActionResult set(String args) {
         try {
             JSONArray arr = new JSONArray(args);
             int i = arr.getInt(0);
@@ -94,7 +82,9 @@ public class ListActor extends IIActorRef<List<String>> {
         }
     }
 
-    private ActionResult remove(String indexStr) {
+    @Action("remove")
+    public ActionResult remove(String args) {
+        String indexStr = parseFirstArgument(args);
         try {
             int i = Integer.parseInt(indexStr.trim());
             if (i < 0 || i >= object.size()) {
@@ -107,28 +97,37 @@ public class ListActor extends IIActorRef<List<String>> {
         }
     }
 
-    private ActionResult size() {
+    @Action("size")
+    public ActionResult size(String args) {
         return new ActionResult(true, String.valueOf(object.size()));
     }
 
-    private ActionResult isEmpty() {
+    @Action("isEmpty")
+    public ActionResult isEmpty(String args) {
         return new ActionResult(true, String.valueOf(object.isEmpty()));
     }
 
-    private ActionResult clear() {
+    @Action("clear")
+    public ActionResult clear(String args) {
         object.clear();
         return new ActionResult(true, "cleared");
     }
 
-    private ActionResult contains(String value) {
+    @Action("contains")
+    public ActionResult contains(String args) {
+        String value = parseFirstArgument(args);
         return new ActionResult(true, String.valueOf(object.contains(value)));
     }
 
-    private ActionResult indexOf(String value) {
+    @Action("indexOf")
+    public ActionResult indexOf(String args) {
+        String value = parseFirstArgument(args);
         return new ActionResult(true, String.valueOf(object.indexOf(value)));
     }
 
-    private ActionResult join(String separator) {
+    @Action("join")
+    public ActionResult join(String args) {
+        String separator = parseFirstArgument(args);
         String sep = (separator == null || separator.isEmpty()) ? ", " : separator;
         return new ActionResult(true, String.join(sep, object));
     }

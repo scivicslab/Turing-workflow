@@ -21,8 +21,8 @@ import java.io.InputStream;
 
 import org.json.JSONArray;
 
+import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
-import com.scivicslab.pojoactor.core.CallableByActionName;
 
 /**
  * General-purpose sub-workflow caller actor.
@@ -33,10 +33,9 @@ import com.scivicslab.pojoactor.core.CallableByActionName;
  *
  * <h2>Usage Example:</h2>
  * <pre>{@code
- * // 1. Create SubWorkflowCaller actor
- * SubWorkflowCaller caller = new SubWorkflowCaller(system);
- * IIActorRef<SubWorkflowCaller> ref = new IIActorRef<>("caller", caller, system);
- * system.addIIActor(ref);
+ * // 1. Create SubWorkflowCaller actor and add to system
+ * SubWorkflowCaller caller = new SubWorkflowCaller("caller", system);
+ * system.addIIActor(caller);
  *
  * // 2. In workflow YAML:
  * matrix:
@@ -72,45 +71,34 @@ import com.scivicslab.pojoactor.core.CallableByActionName;
  * @since 2.5.0
  * @see Interpreter
  * @see IIActorSystem
- * @see CallableByActionName
  */
-public class SubWorkflowCaller implements CallableByActionName {
+public class SubWorkflowCaller extends IIActorRef<Void> {
 
-    private final IIActorSystem system;
     private int callCount = 0;
 
     /**
      * Constructs a new SubWorkflowCaller.
      *
+     * @param name the actor name used to register this actor in the system
      * @param system the actor system to use for sub-workflow execution.
      *               This system is shared between main and sub-workflows.
      */
-    public SubWorkflowCaller(IIActorSystem system) {
-        if (system == null) {
-            throw new IllegalArgumentException("ActorSystem cannot be null");
-        }
-        this.system = system;
+    public SubWorkflowCaller(String name, IIActorSystem system) {
+        super(name, null, system);
     }
 
     /**
-     * Executes actions by name.
+     * Calls the specified sub-workflow synchronously.
      *
-     * <p>Supported actions:</p>
-     * <ul>
-     *   <li>{@code call} - Calls a sub-workflow. The {@code args} parameter
-     *       should contain the YAML filename (e.g., "my-workflow.yaml")</li>
-     * </ul>
+     * <p>The {@code args} parameter should contain the YAML filename
+     * (e.g., "my-workflow.yaml"), either as a plain string or as a JSON array.</p>
      *
-     * @param actionName the name of the action to execute
-     * @param args the arguments for the action (YAML filename for "call" action)
+     * @param args the YAML filename (plain string or JSON array)
      * @return {@link ActionResult} indicating success or failure
      */
-    @Override
-    public ActionResult callByActionName(String actionName, String args) {
-        if ("call".equals(actionName)) {
-            return callSubWorkflow(args);
-        }
-        return new ActionResult(false, "Unknown action: " + actionName);
+    @Action("call")
+    public ActionResult call(String args) {
+        return callSubWorkflow(args);
     }
 
     /**
@@ -152,7 +140,7 @@ public class SubWorkflowCaller implements CallableByActionName {
             // Create new Interpreter for sub-workflow
             Interpreter subInterpreter = new Interpreter.Builder()
                 .loggerName("sub-workflow-" + callCount)
-                .team(system)  // Share the same ActorSystem
+                .team((IIActorSystem) system())  // Share the same ActorSystem
                 .build();
 
             // Load YAML file from classpath

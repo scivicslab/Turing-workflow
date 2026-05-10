@@ -17,6 +17,7 @@
 
 package com.scivicslab.turingworkflow.workflow.distributed;
 
+import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
 import com.scivicslab.turingworkflow.plugin.MathPlugin;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
@@ -24,15 +25,15 @@ import com.scivicslab.turingworkflow.workflow.distributed.DistributedActorSystem
 import com.scivicslab.pojoactor.core.distributed.RemoteActorRef;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Tests for distributed actor communication.
- */
+@Tag("Y_dist")
+@Tag("J_dist")
 class DistributedActorTest {
 
     private DistributedActorSystem system1;
@@ -174,9 +175,16 @@ class DistributedActorTest {
             super(actorName, object, system);
         }
 
-        @Override
-        public ActionResult callByActionName(String actionName, String args) {
-            return this.object.callByActionName(actionName, args);
-        }
+        @Action("add")
+        public ActionResult add(String args) { return this.object.callByActionName("add", args); }
+
+        @Action("multiply")
+        public ActionResult multiply(String args) { return this.object.callByActionName("multiply", args); }
+
+        @Action("getLastResult")
+        public ActionResult getLastResult(String args) { return this.object.callByActionName("getLastResult", args); }
+
+        @Action("greet")
+        public ActionResult greet(String args) { return this.object.callByActionName("greet", args); }
     }
 }

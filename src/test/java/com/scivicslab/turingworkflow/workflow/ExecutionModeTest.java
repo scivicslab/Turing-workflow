@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.scivicslab.pojoactor.core.ActionResult;
@@ -40,6 +41,7 @@ import com.scivicslab.turingworkflow.plugin.MathPlugin;
  * @author devteam@scivicslab.com
  * @since 2.8.0
  */
+@Tag("Y_base.01")
 @DisplayName("ExecutionMode Specification by Example")
 public class ExecutionModeTest {
 
@@ -70,10 +72,28 @@ public class ExecutionModeTest {
             super(actorName, object, system);
         }
 
-        @Override
-        public ActionResult callByActionName(String actionName, String args) {
+        @com.scivicslab.pojoactor.core.Action("add")
+        public ActionResult add(String args) {
             lastExecutionThread.set(Thread.currentThread().getName());
-            return this.object.callByActionName(actionName, args);
+            return this.object.callByActionName("add", args);
+        }
+
+        @com.scivicslab.pojoactor.core.Action("multiply")
+        public ActionResult multiply(String args) {
+            lastExecutionThread.set(Thread.currentThread().getName());
+            return this.object.callByActionName("multiply", args);
+        }
+
+        @com.scivicslab.pojoactor.core.Action("getLastResult")
+        public ActionResult getLastResult(String args) {
+            lastExecutionThread.set(Thread.currentThread().getName());
+            return this.object.callByActionName("getLastResult", args);
+        }
+
+        @com.scivicslab.pojoactor.core.Action("greet")
+        public ActionResult greet(String args) {
+            lastExecutionThread.set(Thread.currentThread().getName());
+            return this.object.callByActionName("greet", args);
         }
 
         public String getLastExecutionThread() {

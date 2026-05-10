@@ -20,6 +20,7 @@ package com.scivicslab.turingworkflow.workflow;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -43,6 +44,7 @@ import com.scivicslab.pojoactor.core.ActionResult;
  * @author devteam@scivicslab.com
  * @since 2.14.0
  */
+@Tag("J_act.01")
 @DisplayName("@Action Annotation on IIActorRef Subclass")
 public class ActionAnnotationTest {
 

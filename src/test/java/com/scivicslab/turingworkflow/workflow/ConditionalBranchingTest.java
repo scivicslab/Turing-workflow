@@ -26,6 +26,7 @@ import java.util.List;
 import org.json.JSONArray;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +46,7 @@ import com.scivicslab.pojoactor.core.ActionResult;
  * @author devteam@scivicslab.com
  * @version 2.7.0
  */
+@Tag("Y_init.03")
 @DisplayName("Conditional Branching Tests")
 public class ConditionalBranchingTest {
 
