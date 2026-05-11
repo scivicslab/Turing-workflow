@@ -24,6 +24,8 @@ import org.json.JSONArray;
 import com.scivicslab.pojoactor.core.Action;
 import com.scivicslab.pojoactor.core.ActionResult;
 
+// ThreadLocal depth counter shared across both SubWorkflowCaller implementations
+
 /**
  * General-purpose sub-workflow caller actor.
  *
@@ -73,6 +75,8 @@ import com.scivicslab.pojoactor.core.ActionResult;
  * @see IIActorSystem
  */
 public class SubWorkflowCaller extends IIActorRef<Void> {
+
+    static final ThreadLocal<Integer> callDepth = ThreadLocal.withInitial(() -> 0);
 
     private int callCount = 0;
 
@@ -136,6 +140,11 @@ public class SubWorkflowCaller extends IIActorRef<Void> {
             return new ActionResult(false, "YAML filename cannot be null or empty");
         }
 
+        int depth = callDepth.get();
+        callDepth.set(depth + 1);
+        String baseName = actualFileName.replaceAll("\\.(yaml|yml)$", "");
+        System.out.println("[SUBWORKFLOW_START:" + baseName + ":" + depth + "]");
+
         try {
             // Create new Interpreter for sub-workflow
             Interpreter subInterpreter = new Interpreter.Builder()
@@ -185,6 +194,9 @@ public class SubWorkflowCaller extends IIActorRef<Void> {
         } catch (Exception e) {
             return new ActionResult(false,
                 "Sub-workflow call error: " + e.getMessage());
+        } finally {
+            System.out.println("[SUBWORKFLOW_END:" + baseName + ":" + depth + "]");
+            callDepth.set(depth);
         }
     }
 

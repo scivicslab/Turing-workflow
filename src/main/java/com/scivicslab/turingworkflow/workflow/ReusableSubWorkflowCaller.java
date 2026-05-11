@@ -179,6 +179,11 @@ public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
             return new ActionResult(false, "YAML filename cannot be null or empty");
         }
 
+        int depth = SubWorkflowCaller.callDepth.get();
+        SubWorkflowCaller.callDepth.set(depth + 1);
+        String baseName = actualFileName.replaceAll("\\.(yaml|yml)$", "");
+        System.out.println("[SUBWORKFLOW_START:" + baseName + ":" + depth + "]");
+
         try {
             // Reset the interpreter state
             reusableInterpreter.reset();
@@ -225,6 +230,9 @@ public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
         } catch (Exception e) {
             return new ActionResult(false,
                 "Sub-workflow call error: " + e.getMessage());
+        } finally {
+            System.out.println("[SUBWORKFLOW_END:" + baseName + ":" + depth + "]");
+            SubWorkflowCaller.callDepth.set(depth);
         }
     }
 
