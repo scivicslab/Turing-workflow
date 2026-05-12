@@ -1166,7 +1166,7 @@ public class Interpreter {
      * @param toState the state to transition to
      */
     public void transitionTo(String toState) {
-        currentState = toState;
+        setCurrentState(toState);
         findNextMatchingTransition();
     }
 
@@ -1179,7 +1179,8 @@ public class Interpreter {
      */
     protected void findNextMatchingTransition() {
         int stepsCount = code.getTransitions().size();
-        for (int i = 0; i < stepsCount; i++) {
+        for (int attempts = 0; attempts < stepsCount; attempts++) {
+            int i = (currentTransitionIndex + attempts) % stepsCount;
             Transition nextTransition = code.getTransitions().get(i);
             if (!nextTransition.getStates().isEmpty() &&
                 matchesStatePattern(nextTransition.getStates().get(0), currentState)) {
@@ -1187,6 +1188,20 @@ public class Interpreter {
                 return;
             }
         }
+    }
+
+    /**
+     * Sets the current state directly without repositioning the transition cursor.
+     *
+     * <p>Unlike {@link #transitionTo(String)}, this method only assigns
+     * {@code currentState} and does not call {@link #findNextMatchingTransition()}.
+     * The next {@link #execCode()} call will resume scanning from
+     * {@code currentTransitionIndex} and match steps against the new state.</p>
+     *
+     * @param state the state value to assign to currentState
+     */
+    public void setCurrentState(String state) {
+        currentState = state;
     }
 
     /**

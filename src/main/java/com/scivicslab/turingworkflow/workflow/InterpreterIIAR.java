@@ -41,6 +41,8 @@ import com.scivicslab.pojoactor.core.ActionResult;
  * <li>{@code execCode} - Executes the loaded workflow code</li>
  * <li>{@code readYaml} - Reads a YAML workflow definition from a file path</li>
  * <li>{@code readJson} - Reads a JSON workflow definition from a file path</li>
+ * <li>{@code setCurrentState} - Sets the interpreter's current state to the specified value</li>
+ * <li>{@code doNothing} - No-op action; returns success immediately without doing anything</li>
  * </ul>
  *
  * @author devteam@scivicslab.com
@@ -167,6 +169,16 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
             } else if (actionName.equals("doNothing")) {
                 success = true;
                 message = arg;
+            } else if (actionName.equals("setCurrentState")) {
+                String targetState = arg;
+                if (arg != null && arg.startsWith("[")) {
+                    org.json.JSONArray args = new org.json.JSONArray(arg);
+                    targetState = args.length() > 0 ? args.getString(0) : arg;
+                }
+                final String state = targetState;
+                this.tell((Interpreter i) -> i.setCurrentState(state)).get();
+                success = true;
+                message = "currentState set to: " + state;
             } else {
                 // Delegate to parent for JSON State API and other common actions
                 return super.callByActionName(actionName, arg);
