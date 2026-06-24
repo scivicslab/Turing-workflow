@@ -147,7 +147,12 @@ public class ParallelMapActor extends IIActorRef<Object> {
             LOG.log(Level.WARNING, "parallel-map task " + idx + " failed", e);
             return "error: " + e.getMessage();
         } finally {
+            // Shut down BOTH the actors (close hooks) AND the isolated system's thread pool. Without
+            // terminate(), each task leaks a non-daemon executor: harmless when the host exits via
+            // System.exit (CLI), but a thread leak in a long-running host (e.g. the chat-ui3 server)
+            // and enough to keep a plain JVM from exiting.
             try { sub.terminateIIActors(); } catch (Exception ignore) { /* best effort */ }
+            try { sub.terminate(); } catch (Exception ignore) { /* best effort */ }
         }
     }
 }
