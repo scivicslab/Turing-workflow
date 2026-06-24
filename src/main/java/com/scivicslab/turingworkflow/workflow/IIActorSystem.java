@@ -143,6 +143,9 @@ public class IIActorSystem extends ActorSystem {
         if (name.equals("str") || name.startsWith("str:")) {
             return new StringActor(name, this);
         }
+        if (name.equals("parallel-map") || name.startsWith("parallel-map:")) {
+            return new ParallelMapActor(name, this);
+        }
         return null;
     }
 
