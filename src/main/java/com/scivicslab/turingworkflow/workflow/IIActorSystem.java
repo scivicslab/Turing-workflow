@@ -26,6 +26,7 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.scivicslab.pojoactor.core.ActorRef;
 import com.scivicslab.pojoactor.core.ActorSystem;
 
 /**
@@ -116,6 +117,29 @@ public class IIActorSystem extends ActorSystem {
         }
 
         return actor;
+    }
+
+    /**
+     * Retrieves an actor by name, looking in the interpreter-interfaced registry when the plain
+     * one has no actor of that name.
+     *
+     * <p>{@code addIIActor} files an actor only under {@link #iiActors}, so without this the two
+     * registries are invisible to each other. That matters outside this JVM:
+     * {@code HttpActorServer} resolves every incoming name through {@code getActor}, so an actor
+     * a workflow can call would not be callable from another process — which is the whole of what
+     * a parent interpreter does to its children.
+     *
+     * <p>A plain actor of the same name wins, so nothing that resolves today resolves differently.
+     *
+     * @param <T> the type of the actor object
+     * @param actorName the name of the actor to retrieve
+     * @return the actor reference, or {@code null} if neither registry has that name
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> ActorRef<T> getActor(String actorName) {
+        ActorRef<T> plain = super.getActor(actorName);
+        return plain != null ? plain : (ActorRef<T>) iiActors.get(actorName);
     }
 
     /**
