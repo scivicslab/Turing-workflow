@@ -18,11 +18,13 @@
 package com.scivicslab.turingworkflow.workflow;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -60,6 +62,9 @@ public class IIActorSystem extends ActorSystem {
     private static final String CLASS_NAME = IIActorSystem.class.getName();
 
     ConcurrentHashMap<String, IIActorRef<?>> iiActors = new ConcurrentHashMap<>();
+
+    /** Ways of building an actor from a name this system does not have; see addActorFactory. */
+    private final List<Function<String, IIActorRef<?>>> actorFactories = new CopyOnWriteArrayList<>();
 
     /** The root actor for the actor hierarchy. */
     private final RootIIAR rootActor;
@@ -154,6 +159,23 @@ public class IIActorSystem extends ActorSystem {
         return (IIActorRef<T>) iiActors.computeIfAbsent(name, this::tryAutoCreate);
     }
 
+    /**
+     * Registers a way of building an actor from a name that this system does not yet have.
+     *
+     * <p>The built-in names are tried first, so registering a factory cannot change what
+     * {@code calc}, {@code list}, {@code out}, {@code str} or {@code parallel-map} mean.
+     *
+     * <p>Exists because some actors cannot be registered in advance: an actor in another process
+     * may be created after this system started, so its name is only known when a workflow uses it
+     * ({@code RemoteChildActor_260906_oo01}). A factory returns {@code null} for a name it does
+     * not claim, and the next one is tried.
+     *
+     * @param factory builds an actor for a name, or returns {@code null} for names it does not claim
+     */
+    public void addActorFactory(Function<String, IIActorRef<?>> factory) {
+        actorFactories.add(factory);
+    }
+
     private IIActorRef<?> tryAutoCreate(String name) {
         if (name.equals("calc") || name.startsWith("calc:")) {
             return new CalcActor(name, this);
@@ -169,6 +191,12 @@ public class IIActorSystem extends ActorSystem {
         }
         if (name.equals("parallel-map") || name.startsWith("parallel-map:")) {
             return new ParallelMapActor(name, this);
+        }
+        for (Function<String, IIActorRef<?>> factory : actorFactories) {
+            IIActorRef<?> made = factory.apply(name);
+            if (made != null) {
+                return made;
+            }
         }
         return null;
     }
