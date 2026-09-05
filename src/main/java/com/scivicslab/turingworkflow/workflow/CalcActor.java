@@ -113,6 +113,43 @@ public class CalcActor extends IIActorRef<double[]> {
         }
     }
 
+    /** Returns success=true if value &lt; arg; success=false otherwise. */
+    @Action("lt")
+    public ActionResult lt(String args) { return compare(parseFirstArgument(args), '<'); }
+
+    /** Returns success=true if value &lt;= arg; success=false otherwise. */
+    @Action("lte")
+    public ActionResult lte(String args) { return compare(parseFirstArgument(args), 'L'); }
+
+    /** Returns success=true if value &gt; arg; success=false otherwise. */
+    @Action("gt")
+    public ActionResult gt(String args) { return compare(parseFirstArgument(args), '>'); }
+
+    /** Returns success=true if value &gt;= arg; success=false otherwise. */
+    @Action("gte")
+    public ActionResult gte(String args) { return compare(parseFirstArgument(args), 'G'); }
+
+    /** Returns success=true if value == arg; success=false otherwise. */
+    @Action("eq")
+    public ActionResult eq(String args) { return compare(parseFirstArgument(args), '='); }
+
+    private ActionResult compare(String arg, char op) {
+        try {
+            double n = Double.parseDouble(arg.trim());
+            boolean result = switch (op) {
+                case '<' -> object[0] <  n;
+                case 'L' -> object[0] <= n;
+                case '>' -> object[0] >  n;
+                case 'G' -> object[0] >= n;
+                case '=' -> object[0] == n;
+                default  -> false;
+            };
+            return new ActionResult(result, format(object[0]));
+        } catch (NumberFormatException e) {
+            return new ActionResult(false, "calc.compare: invalid number: " + arg);
+        }
+    }
+
     private ActionResult arithmetic(String arg, char op) {
         try {
             double n = Double.parseDouble(arg.trim());

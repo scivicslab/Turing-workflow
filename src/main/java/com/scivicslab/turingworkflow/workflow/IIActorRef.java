@@ -62,6 +62,48 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     }
 
     /**
+     * Constructs a new IIActorRef and runs a companion-setup callback at the end of
+     * construction.
+     *
+     * <p>The {@code companionSetup} callback receives this actor (which, being an
+     * {@code IIActorRef}, knows the {@link IIActorSystem}) and can create and attach companion
+     * child actors — for example a dedicated watchdog whose {@code trip}/{@code close()} stops
+     * this actor. Placing this on the {@code IIActorRef} layer keeps a wrapped POJO, which
+     * knows nothing about actors or the actor system, free of this responsibility. Use
+     * {@link #addChildActor(IIActorRef)} from the callback to attach the companion as a child
+     * of this actor.</p>
+     *
+     * <p>The callback runs before this actor's subclass fields are initialised (it receives a
+     * {@code this} reference from inside the constructor), so it must only store a reference to
+     * this actor, never use its not-yet-initialised state.</p>
+     *
+     * @param actorName      the name of the actor
+     * @param object         the actor object instance
+     * @param system         the actor system managing this actor
+     * @param companionSetup callback to create/attach companion actors, or {@code null}
+     */
+    public IIActorRef(String actorName, T object, IIActorSystem system,
+            java.util.function.Consumer<IIActorRef<T>> companionSetup) {
+        super(actorName, object, system);
+        if (companionSetup != null) {
+            companionSetup.accept(this);
+        }
+    }
+
+    /**
+     * Attaches an already-constructed IIActorRef as a child of this actor and registers it in
+     * the actor system. Used from a companion-setup callback (see
+     * {@link #IIActorRef(String, Object, IIActorSystem, java.util.function.Consumer)}).
+     *
+     * @param child the actor to attach as a child of this actor
+     */
+    public void addChildActor(IIActorRef<?> child) {
+        child.setParentName(this.getName());
+        this.getNamesOfChildren().add(child.getName());
+        ((IIActorSystem) system()).addIIActor(child);
+    }
+
+    /**
      * Invokes the {@link Action @Action}-annotated method whose name matches {@code actionName}.
      * Delegates to {@link ActionDispatcher} from POJO-actor.
      *

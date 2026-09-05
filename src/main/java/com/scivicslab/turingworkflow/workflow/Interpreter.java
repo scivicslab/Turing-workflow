@@ -1173,14 +1173,15 @@ public class Interpreter {
     /**
      * Finds the first step whose from-state pattern matches the current state.
      *
-     * <p>Searches from the beginning of the steps list and updates
-     * currentTransitionIndex to the index of the first matching step. Supports
-     * state patterns including wildcards, negations, and numeric comparisons.</p>
+     * <p>Always searches from index 0 (top of the transition list), consistent
+     * with the documented semantics: "the engine scans the transition list from
+     * top to bottom." This ensures that catch-all transitions such as
+     * {@code ["!end", "end"]} do not shadow loop-entry transitions after a
+     * loop-body transition returns to the loop state.</p>
      */
     protected void findNextMatchingTransition() {
         int stepsCount = code.getTransitions().size();
-        for (int attempts = 0; attempts < stepsCount; attempts++) {
-            int i = (currentTransitionIndex + attempts) % stepsCount;
+        for (int i = 0; i < stepsCount; i++) {
             Transition nextTransition = code.getTransitions().get(i);
             if (!nextTransition.getStates().isEmpty() &&
                 matchesStatePattern(nextTransition.getStates().get(0), currentState)) {
