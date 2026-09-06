@@ -20,7 +20,7 @@ import org.json.JSONArray;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * Verifies the built-in {@code parallel-map} actor without any LLM: it runs a trivial sub-workflow

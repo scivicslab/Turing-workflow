@@ -24,8 +24,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import com.scivicslab.pojoactor.core.Action;
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.Action;
+import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.turingworkflow.workflow.DynamicActorLoaderActor;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
@@ -258,7 +258,7 @@ public class DynamicActorLoaderActorTest {
     /**
      * Simple test actor for createChild tests.
      */
-    public static class TestActor implements com.scivicslab.pojoactor.core.CallableByActionName {
+    public static class TestActor implements com.scivicslab.pojoactor.action.CallableByActionName {
         @Override
         public ActionResult callByActionName(String actionName, String args) {
             return new ActionResult(true, "TestActor: " + actionName);

@@ -21,8 +21,8 @@ import java.io.InputStream;
 
 import org.json.JSONArray;
 
-import com.scivicslab.pojoactor.core.Action;
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.Action;
+import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * Reusable sub-workflow caller that reuses a single Interpreter instance.

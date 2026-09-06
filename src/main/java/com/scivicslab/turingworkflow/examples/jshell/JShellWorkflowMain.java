@@ -1,6 +1,6 @@
 package com.scivicslab.turingworkflow.examples.jshell;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.pojoactor.core.ActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 import com.scivicslab.turingworkflow.workflow.Interpreter;

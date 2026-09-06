@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * Tests for conditional branching in the Workflow Interpreter.

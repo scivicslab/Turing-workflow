@@ -25,8 +25,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import com.scivicslab.pojoactor.core.ActionResult;
-import com.scivicslab.pojoactor.core.CallableByActionName;
+import com.scivicslab.pojoactor.action.ActionResult;
+import com.scivicslab.pojoactor.action.CallableByActionName;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 

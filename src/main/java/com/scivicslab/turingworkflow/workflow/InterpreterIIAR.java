@@ -26,7 +26,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * Interpreter-interfaced actor reference for {@link Interpreter} instances.

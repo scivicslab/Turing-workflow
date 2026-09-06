@@ -17,12 +17,12 @@
 
 package com.scivicslab.turingworkflow;
 
-import com.scivicslab.pojoactor.core.ActionBaseClassProvider;
+import com.scivicslab.pojoactor.action.ActionBaseClassProvider;
 
 /**
  * Registers {@code IIActorRef} as a base class that supports the {@code @Action} annotation.
  *
- * <p>This provider is discovered by {@link com.scivicslab.pojoactor.core.ActionAnnotationProcessor}
+ * <p>This provider is discovered by {@link com.scivicslab.pojoactor.action.ActionAnnotationProcessor}
  * via {@link java.util.ServiceLoader} at compile time.</p>
  *
  * @author devteam@scivicslab.com

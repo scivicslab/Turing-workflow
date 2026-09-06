@@ -17,8 +17,8 @@
 
 package com.scivicslab.turingworkflow.core.testplugin;
 
-import com.scivicslab.pojoactor.core.ActionResult;
-import com.scivicslab.pojoactor.core.CallableByActionName;
+import com.scivicslab.pojoactor.action.ActionResult;
+import com.scivicslab.pojoactor.action.CallableByActionName;
 import com.scivicslab.turingworkflow.workflow.ActorSystemAware;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 

@@ -17,9 +17,9 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.pojoactor.core.ActorProvider;
-import com.scivicslab.pojoactor.core.CallableByActionName;
+import com.scivicslab.pojoactor.action.CallableByActionName;
 import com.scivicslab.pojoactor.core.DynamicActorLoader;
 
 import org.json.JSONArray;

@@ -26,7 +26,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.turingworkflow.plugin.MathPlugin;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
@@ -70,16 +70,16 @@ public class WorkflowInterpreterTest {
             super(actorName, object, system);
         }
 
-        @com.scivicslab.pojoactor.core.Action("add")
+        @com.scivicslab.pojoactor.action.Action("add")
         public ActionResult add(String args) { return this.object.callByActionName("add", args); }
 
-        @com.scivicslab.pojoactor.core.Action("multiply")
+        @com.scivicslab.pojoactor.action.Action("multiply")
         public ActionResult multiply(String args) { return this.object.callByActionName("multiply", args); }
 
-        @com.scivicslab.pojoactor.core.Action("getLastResult")
+        @com.scivicslab.pojoactor.action.Action("getLastResult")
         public ActionResult getLastResult(String args) { return this.object.callByActionName("getLastResult", args); }
 
-        @com.scivicslab.pojoactor.core.Action("greet")
+        @com.scivicslab.pojoactor.action.Action("greet")
         public ActionResult greet(String args) { return this.object.callByActionName("greet", args); }
     }
 

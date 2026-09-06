@@ -38,7 +38,7 @@ import java.util.regex.Pattern;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.turingworkflow.workflow.kustomize.WorkflowKustomizer;
 
 import org.yaml.snakeyaml.Yaml;

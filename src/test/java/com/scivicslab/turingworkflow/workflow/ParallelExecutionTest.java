@@ -31,8 +31,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import com.scivicslab.pojoactor.core.Action;
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.Action;
+import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * Tests for parallel execution and value-based conditional branching.

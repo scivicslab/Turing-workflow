@@ -20,8 +20,8 @@ package com.scivicslab.turingworkflow.plugin;
 import org.json.JSONArray;
 import org.json.JSONException;
 
-import com.scivicslab.pojoactor.core.ActionResult;
-import com.scivicslab.pojoactor.core.CallableByActionName;
+import com.scivicslab.pojoactor.action.ActionResult;
+import com.scivicslab.pojoactor.action.CallableByActionName;
 
 /**
  * Sample plugin class for testing dynamic actor loading with string-based invocation.

@@ -2,8 +2,8 @@ package com.scivicslab.turingworkflow.examples.jshell;
 
 import jdk.jshell.JShell;
 import jdk.jshell.SnippetEvent;
-import com.scivicslab.pojoactor.core.ActionResult;
-import com.scivicslab.pojoactor.core.CallableByActionName;
+import com.scivicslab.pojoactor.action.ActionResult;
+import com.scivicslab.pojoactor.action.CallableByActionName;
 import java.util.List;
 
 /**

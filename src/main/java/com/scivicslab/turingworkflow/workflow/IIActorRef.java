@@ -19,11 +19,11 @@ package com.scivicslab.turingworkflow.workflow;
 
 import org.json.JSONObject;
 
-import com.scivicslab.pojoactor.core.Action;
-import com.scivicslab.pojoactor.core.ActionDispatcher;
+import com.scivicslab.pojoactor.action.Action;
+import com.scivicslab.pojoactor.action.ActionDispatcher;
 import com.scivicslab.pojoactor.core.ActorRef;
-import com.scivicslab.pojoactor.core.CallableByActionName;
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.CallableByActionName;
+import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * An interpreter-interfaced actor reference that can be invoked by action name strings.
@@ -88,6 +88,27 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
         if (companionSetup != null) {
             companionSetup.accept(this);
         }
+    }
+
+    /**
+     * Stores what an action returned, for {@code ${result}} to expand to.
+     *
+     * <p>{@code ActorRef} keeps the value as a plain string, since what an action returned is
+     * this project's vocabulary rather than the actor model's. This pair is the typed view of
+     * that same slot.
+     *
+     * @param result the result to store, or {@code null} to clear it
+     */
+    public void setLastResult(ActionResult result) {
+        setLastResultValue(result == null ? null : result.getResult());
+    }
+
+    /**
+     * @return the last stored result, or {@code null} if no action has run
+     */
+    public ActionResult getLastResult() {
+        String value = getLastResultValue();
+        return value == null ? null : new ActionResult(true, value);
     }
 
     /**

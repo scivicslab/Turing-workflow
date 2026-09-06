@@ -17,7 +17,7 @@
 
 package com.scivicslab.turingworkflow.examples.turing;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 import org.json.JSONArray;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;

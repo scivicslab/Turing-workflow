@@ -10,8 +10,8 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
-import com.scivicslab.pojoactor.core.Action;
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.Action;
+import com.scivicslab.pojoactor.action.ActionResult;
 import org.json.JSONArray;
 
 import java.util.ArrayList;

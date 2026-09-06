@@ -31,7 +31,7 @@ import org.json.JSONObject;
 import org.yaml.snakeyaml.Yaml;
 
 import com.scivicslab.pluggablecli.CommandRepository;
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.turingworkflow.workflow.DynamicActorLoaderIIAR;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 import com.scivicslab.turingworkflow.workflow.Interpreter;

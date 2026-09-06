@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.json.JSONArray;
 
-import com.scivicslab.pojoactor.core.ActionResult;
+import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * Actor that holds workflow variables.
