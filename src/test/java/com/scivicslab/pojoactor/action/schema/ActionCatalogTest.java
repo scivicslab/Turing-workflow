@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,6 +20,7 @@ import com.scivicslab.pojoactor.core.ActorSystem;
  * questions it has — which actions does this actor have, and what does one of them take — are
  * themselves actions ({@code ActionArgumentSchema_260807_oo01} step 3).
  */
+@Tag("SchemaRetrievalRoutes_260906_oo01")
 @DisplayName("ActionCatalog — telling another process what it may call")
 class ActionCatalogTest {
 

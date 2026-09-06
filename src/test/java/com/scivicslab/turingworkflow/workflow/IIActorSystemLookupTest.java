@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.scivicslab.pojoactor.action.ActionResult;
@@ -18,6 +19,7 @@ import com.scivicslab.pojoactor.core.ActorRef;
  * interpreter-interfaced registry is unreachable from outside the JVM. Those are exactly the
  * actors a workflow can call, i.e. the ones a parent interpreter in another process needs.
  */
+@Tag("WorkflowTab_Lookup_260906_oo01")
 @DisplayName("IIActorSystem — finding an interpreter-interfaced actor by name")
 class IIActorSystemLookupTest {
 
