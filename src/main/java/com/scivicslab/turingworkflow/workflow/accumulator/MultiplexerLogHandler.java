@@ -151,21 +151,24 @@ public class MultiplexerLogHandler extends Handler {
 
     /**
      * Determines the source name from the log record.
+     *
+     * <p>Package-private so {@code MultiplexerLogHandlerSourceNameTest} can name the mapping
+     * directly instead of standing up an actor system to read it back off the multiplexer.
      */
-    private String getSourceName(LogRecord record) {
+    String getSourceName(LogRecord record) {
         String loggerName = record.getLoggerName();
         if (loggerName == null || loggerName.isEmpty()) {
             return "system";
         }
 
         // Use short name for common patterns
-        if (loggerName.startsWith("com.scivicslab.actoriac.cli")) {
+        if (loggerName.startsWith("com.scivicslab.turingworkflow.cli")) {
             return "cli";
         }
-        if (loggerName.startsWith("com.scivicslab.actoriac")) {
-            return "actor-iac";
-        }
         if (loggerName.startsWith("com.scivicslab.turingworkflow")) {
+            return "turing-workflow";
+        }
+        if (loggerName.startsWith("com.scivicslab.pojoactor")) {
             return "pojo-actor";
         }
 
