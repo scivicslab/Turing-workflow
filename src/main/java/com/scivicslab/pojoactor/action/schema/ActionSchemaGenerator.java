@@ -24,6 +24,8 @@ import com.github.victools.jsonschema.generator.SchemaGeneratorConfigBuilder;
 import com.github.victools.jsonschema.generator.SchemaVersion;
 import com.scivicslab.pojoactor.action.Action;
 
+import jakarta.validation.constraints.NotNull;
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -123,6 +125,12 @@ public final class ActionSchemaGenerator {
 
         SchemaGeneratorConfigBuilder configBuilder =
                 new SchemaGeneratorConfigBuilder(SchemaVersion.DRAFT_2020_12, OptionPreset.PLAIN_JSON);
+        // Which fields must be present cannot be read off the Java types: String hostname and
+        // String comment are the same type, and every reference type accepts null. @NotNull on the
+        // record component is where that is said, and this is what carries it into the schema
+        // (RequiredFieldDeclaration_260906_oo01).
+        configBuilder.forFields().withRequiredCheck(
+                field -> field.getAnnotationConsideringFieldAndGetter(NotNull.class) != null);
         SchemaGeneratorConfig config = configBuilder.build();
         SchemaGenerator generator = new SchemaGenerator(config);
 

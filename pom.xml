@@ -80,6 +80,15 @@
         <version>1.5.5</version>
       </dependency>
 
+      <!-- @NotNull marks which fields of an argsType record must be present.
+           ActionSchemaGenerator reads it to emit "required"; not optional, because a project
+           that declares argsType has to be able to write the annotation. -->
+      <dependency>
+        <groupId>jakarta.validation</groupId>
+        <artifactId>jakarta.validation-api</artifactId>
+        <version>3.1.1</version>
+      </dependency>
+
       <!-- Workflow engine dependencies -->
       <dependency>
         <groupId>org.yaml</groupId>
