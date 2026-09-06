@@ -142,7 +142,7 @@ value of the `calc` actor. Example: `arguments: "v * 2 + 1"` doubles the counter
 ## 2. CLI Invocation
 
 ```bash
-java -jar turing-workflow-<version>.jar run \
+java -jar turing-workflow-<version>-shaded.jar run \
   -w <workflow.yaml>           # path to workflow YAML (required)
   -d <base-dir>                # base directory for resolving relative paths (default: .)
   -m <maxIterations>           # max loop iterations (default: 10000)
@@ -152,7 +152,7 @@ java -jar turing-workflow-<version>.jar run \
 
 **Example:**
 ```bash
-java -jar turing-workflow-3.0.1.jar run \
+java -jar turing-workflow-4.0.0-shaded.jar run \
   -w /data/workflow/kana-kanji-pairs.yaml \
   -P ocr.file=/data/ocr/book001.tsv \
   -P pairs.file=/data/output/pairs.tsv \

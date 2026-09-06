@@ -8,7 +8,7 @@ A YAML-based workflow engine built on POJO-actor. Provides a Turing-complete sta
 
 [![Java Version](https://img.shields.io/badge/java-21+-blue.svg)](https://openjdk.java.net/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Javadoc](https://img.shields.io/badge/javadoc-3.0.0-brightgreen.svg)](https://javadoc.io/doc/com.scivicslab/turing-workflow/3.0.0)
+[![Javadoc](https://img.shields.io/badge/javadoc-4.0.0-brightgreen.svg)](https://javadoc.io/doc/com.scivicslab/turing-workflow/4.0.0)
 [![Maven Central](https://img.shields.io/maven-central/v/com.scivicslab/turing-workflow.svg)](https://central.sonatype.com/artifact/com.scivicslab/turing-workflow)
 
 ## Overview
@@ -26,7 +26,7 @@ With Virtual Threads since JDK 21, you can create tens of thousands of such auto
 
 - Java 21 or higher
 - Maven 3.6+
-- POJO-actor 3.0.0
+- POJO-actor 4.0.0
 
 ## Installation
 
@@ -36,7 +36,7 @@ With Virtual Threads since JDK 21, you can create tens of thousands of such auto
 <dependency>
     <groupId>com.scivicslab</groupId>
     <artifactId>turing-workflow</artifactId>
-    <version>3.0.0</version>
+    <version>4.0.0</version>
 </dependency>
 ```
 
@@ -245,17 +245,18 @@ steps:
 - **YAML Workflow** — Define workflows in YAML format
 - **Turing-complete** — Conditional branching and loops via state transitions
 - **`@Action` annotation** — Simple method-level action registration
+- **Name-based dispatch** — `ActionDispatcher` finds the method a workflow step names, and checks its arguments against the JSON Schema generated from the declared `argsType`
 - **Dynamic Actor Loading** — Load actors from external JARs at runtime via Maven coordinates
 - **Subworkflows** — Split and reuse workflow definitions
 - **YAML Overlay** — Environment-specific configuration (dev/staging/prod)
-- **Distributed Execution** — Inter-node workflow execution
 - **Breakpoints** — Pause/resume workflow execution
 - **CLI** — Command-line interface for workflow execution
 
 ## References
 
-- **Javadoc**: [API Reference](https://javadoc.io/doc/com.scivicslab/turing-workflow/3.0.0)
+- **Javadoc**: [API Reference](https://javadoc.io/doc/com.scivicslab/turing-workflow/4.0.0)
 - **POJO-actor**: [GitHub](https://github.com/scivicslab/POJO-actor)
+- **pojo-actor-distributed**: [GitHub](https://github.com/scivicslab/pojo-actor-distributed) — carries messages between actor systems in different processes
 - **Turing-workflow-plugins**: [GitHub](https://github.com/scivicslab/Turing-workflow-plugins)
 
 ## License
