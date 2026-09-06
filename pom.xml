@@ -71,11 +71,13 @@
         <optional>true</optional>
       </dependency>
 
+      <!-- Not optional: IIActorRef gives its ActionDispatcher the schemas, so an action that
+           declares argsType validates its argument, and this is what performs that check.
+           Left optional, a project would compile and then fail on the first such call. -->
       <dependency>
         <groupId>com.networknt</groupId>
         <artifactId>json-schema-validator</artifactId>
         <version>1.5.5</version>
-        <optional>true</optional>
       </dependency>
 
       <!-- Workflow engine dependencies -->

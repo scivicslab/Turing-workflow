@@ -21,6 +21,7 @@ import org.json.JSONObject;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionDispatcher;
+import com.scivicslab.pojoactor.action.schema.ActionSchemaRegistry;
 import com.scivicslab.pojoactor.core.ActorRef;
 import com.scivicslab.pojoactor.action.CallableByActionName;
 import com.scivicslab.pojoactor.action.ActionResult;
@@ -38,7 +39,14 @@ import com.scivicslab.pojoactor.action.ActionResult;
  */
 public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByActionName {
 
-    private final ActionDispatcher dispatcher = new ActionDispatcher(this);
+    /**
+     * The JSON Schemas of every {@code argsType} action on the classpath, read once for the whole
+     * JVM. {@link ActionSchemaRegistry} scans the classpath when it is built, so one shared
+     * instance rather than one per actor.
+     */
+    private static final ActionSchemaRegistry SCHEMAS = new ActionSchemaRegistry();
+
+    private final ActionDispatcher dispatcher = new ActionDispatcher(this, SCHEMAS);
 
     /**
      * Constructs a new IIActorRef with the specified actor name and object.
