@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,6 +26,7 @@ import jakarta.validation.constraints.NotNull;
  * {@code String model} are the same type — so the generator cannot tell a required field from an
  * optional one on its own. {@code @NotNull} is where that is said.
  */
+@Tag("RequiredFieldDeclaration_260906_oo01")
 @DisplayName("ActionSchemaGenerator — declaring which fields are required")
 class RequiredFieldSchemaTest {
 

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import com.scivicslab.pojoactor.action.Action;
@@ -18,6 +19,7 @@ import com.scivicslab.pojoactor.action.ActionResult;
  * given the schemas, none of that reached the call: Jackson coerced whatever arrived, and
  * {@code {"hostname": 123}} was accepted as the string "123".
  */
+@Tag("WorkflowArgumentValidation_260906_oo01")
 @DisplayName("IIActorRef — refusing an argument that does not match its declared shape")
 class IIActorRefValidationTest {
 
