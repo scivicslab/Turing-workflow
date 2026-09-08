@@ -18,7 +18,7 @@
 package com.scivicslab.turingworkflow.examples.turing;
 
 import com.scivicslab.pojoactor.action.ActionResult;
-import org.json.JSONArray;
+import org.json.JSONObject;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 
@@ -57,21 +57,23 @@ public class TuringIIAR extends IIActorRef<Turing> {
     }
 
     /**
-     * Parses the first element from a JSON array string.
-     * For example, '["0"]' returns "0", '["R"]' returns "R".
+     * Reads one named field out of the JSON object the workflow engine built.
      *
-     * @param args the JSON array string
-     * @return the first element as a string, or empty string if empty
+     * <p>The engine hands an action whatever the YAML wrote under {@code arguments}. This class
+     * dispatches on strings rather than declaring {@code argsType}, so it reads the field itself:
+     * {@code {"value":"0"}} with field {@code value} gives {@code "0"}. The field names are the
+     * ones {@link TuringActionIIAR} declares in its argument records, so both classes are driven
+     * by the same workflow file.</p>
+     *
+     * @param args  the JSON object the engine passed
+     * @param field the name of the field to read
+     * @return the field's value, or empty string when the argument or the field is absent
      */
-    private String parseFirstArg(String args) {
-        if (args == null || args.isEmpty() || args.equals("[]")) {
+    private String argument(String args, String field) {
+        if (args == null || args.isEmpty()) {
             return "";
         }
-        JSONArray array = new JSONArray(args);
-        if (array.length() > 0) {
-            return array.getString(0);
-        }
-        return "";
+        return new JSONObject(args).optString(field, "");
     }
 
     /**
@@ -102,12 +104,12 @@ public class TuringIIAR extends IIActorRef<Turing> {
                     return new ActionResult(true, "Machine initialized");
 
                 case "put":
-                    String putValue = parseFirstArg(args);
+                    String putValue = argument(args, "value");
                     this.tell(t -> t.put(putValue)).get();
                     return new ActionResult(true, "Put " + putValue);
 
                 case "move":
-                    String direction = parseFirstArg(args);
+                    String direction = argument(args, "direction");
                     this.tell(t -> t.move(direction)).get();
                     return new ActionResult(true, "Moved " + direction);
 
@@ -121,7 +123,7 @@ public class TuringIIAR extends IIActorRef<Turing> {
 
                 // Condition checking actions (return boolean for workflow branching)
                 case "matchCurrentValue":
-                    String matchValue = parseFirstArg(args);
+                    String matchValue = argument(args, "expected");
                     boolean matchResult = this.ask(t -> t.matchCurrentValue(matchValue)).get();
                     return new ActionResult(matchResult, "matchCurrentValue(" + matchValue + ")=" + matchResult);
 
