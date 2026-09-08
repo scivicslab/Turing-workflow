@@ -8,7 +8,7 @@ A YAML-based workflow engine built on POJO-actor. Provides a Turing-complete sta
 
 [![Java Version](https://img.shields.io/badge/java-21+-blue.svg)](https://openjdk.java.net/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Javadoc](https://img.shields.io/badge/javadoc-4.0.0-brightgreen.svg)](https://javadoc.io/doc/com.scivicslab/turing-workflow/4.0.0)
+[![Javadoc](https://img.shields.io/badge/javadoc-4.1.0-brightgreen.svg)](https://javadoc.io/doc/com.scivicslab/turing-workflow/4.1.0)
 [![Maven Central](https://img.shields.io/maven-central/v/com.scivicslab/turing-workflow.svg)](https://central.sonatype.com/artifact/com.scivicslab/turing-workflow)
 
 ## Overview
@@ -26,7 +26,7 @@ With Virtual Threads since JDK 21, you can create tens of thousands of such auto
 
 - Java 21 or higher
 - Maven 3.6+
-- POJO-actor 4.0.0
+- POJO-actor 4.1.0
 
 ## Installation
 
@@ -36,7 +36,7 @@ With Virtual Threads since JDK 21, you can create tens of thousands of such auto
 <dependency>
     <groupId>com.scivicslab</groupId>
     <artifactId>turing-workflow</artifactId>
-    <version>4.0.0</version>
+    <version>4.1.0</version>
 </dependency>
 ```
 
@@ -59,23 +59,55 @@ steps:
     actions:
       - actor: dataProcessor    # actor name
         method: process         # method name
-        arguments: "data.csv"   # arguments
+        arguments:              # one named field per argument
+          file: "data.csv"
   - states: ["1", "end"]
     actions:
       - actor: log
         method: info
-        arguments: "Done"
+        arguments:
+          message: "Done"
 ```
 
 This follows the same mental model as `tell()`/`ask()` in Java code. The combination allows complex logic that traditional YAML-based workflow languages struggle with — without introducing custom syntax.
 
 ### Arguments
 
-The `arguments` field accepts:
+An action states what it takes by declaring `argsType` (see [Writing an Actor](#writing-an-actor)), and `arguments` names one field per component of that type:
 
-- **String**: `arguments: "hello"`
-- **JSON array**: `arguments: ["ROOT", "myActor", "com.example.MyActor"]`
-- **JSON object**: `arguments: {"key": "value"}`
+```yaml
+- actor: turing
+  method: put
+  arguments:
+    value: "e"
+```
+
+The names come from the record the action declares, so a caller can be told the shape rather than having to read the method. A JSON Schema is generated for each one at build time, and the argument is checked against it before the action runs.
+
+An action that declares no `argsType` receives the raw string the engine built: a scalar is wrapped in a one-element JSON array, and a list becomes a JSON array of its elements.
+
+### Expressions
+
+A value that starts with `jexl:` is evaluated as a [JEXL](https://commons.apache.org/proper/commons-jexl/) expression, and the action receives whatever the expression answered — a number stays a number:
+
+```yaml
+- actor: calc:total
+  method: add
+  arguments:
+    operand: "jexl: actors.get('calc:i').get()"
+```
+
+The expression is given five things:
+
+| name | what it is |
+|---|---|
+| `actors` | the actors in this system, by name — `actors.get('calc:i')` |
+| `state` | this actor's `JsonState` |
+| `result` | what the previous action returned |
+| `self` | this actor's own name |
+| `currentState` | the state the machine is in |
+
+A value that does not start with `jexl:` is passed through as written.
 
 ### Conditional Branching
 
@@ -87,14 +119,16 @@ Multiple transitions from the same state provide conditional branching. Transiti
   actions:
     - actor: turing
       method: matchCurrentValue
-      arguments: "1"
+      arguments:
+        expected: "1"
 
 # From state "2": if current value is "0", go to state "3"
 - states: ["2", "3"]
   actions:
     - actor: turing
       method: matchCurrentValue
-      arguments: "0"
+      arguments:
+        expected: "0"
 ```
 
 ### State Pattern Matching
@@ -120,65 +154,65 @@ steps:
   - {actor: turing, method: printTape}
 - states: ["1", "2"]
   actions:
-  - {actor: turing, method: put, arguments: "e"}
-  - {actor: turing, method: move, arguments: "R"}
-  - {actor: turing, method: put, arguments: "e"}
-  - {actor: turing, method: move, arguments: "R"}
-  - {actor: turing, method: put, arguments: "0"}
-  - {actor: turing, method: move, arguments: "R"}
-  - {actor: turing, method: move, arguments: "R"}
-  - {actor: turing, method: put, arguments: "0"}
-  - {actor: turing, method: move, arguments: "L"}
-  - {actor: turing, method: move, arguments: "L"}
+  - {actor: turing, method: put, arguments: {value: "e"}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
+  - {actor: turing, method: put, arguments: {value: "e"}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
+  - {actor: turing, method: put, arguments: {value: "0"}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
+  - {actor: turing, method: put, arguments: {value: "0"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
 - states: ["101", "2"]
   actions:
   - {actor: turing, method: printTape}
 - states: ["2", "2"]
   actions:
-  - {actor: turing, method: matchCurrentValue, arguments: "1"}
-  - {actor: turing, method: move, arguments: "R"}
-  - {actor: turing, method: put, arguments: "x"}
-  - {actor: turing, method: move, arguments: "L"}
-  - {actor: turing, method: move, arguments: "L"}
-  - {actor: turing, method: move, arguments: "L"}
+  - {actor: turing, method: matchCurrentValue, arguments: {expected: "1"}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
+  - {actor: turing, method: put, arguments: {value: "x"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
 - states: ["2", "3"]
   actions:
-  - {actor: turing, method: matchCurrentValue, arguments: "0"}
+  - {actor: turing, method: matchCurrentValue, arguments: {expected: "0"}}
 - states: ["3", "3"]
   actions:
   - {actor: turing, method: isAny}
-  - {actor: turing, method: move, arguments: "R"}
-  - {actor: turing, method: move, arguments: "R"}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
 - states: ["3", "4"]
   actions:
   - {actor: turing, method: isNone}
-  - {actor: turing, method: put, arguments: "1"}
-  - {actor: turing, method: move, arguments: "L"}
+  - {actor: turing, method: put, arguments: {value: "1"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
 - states: ["4", "3"]
   actions:
-  - {actor: turing, method: matchCurrentValue, arguments: "x"}
-  - {actor: turing, method: put, arguments: " "}
-  - {actor: turing, method: move, arguments: "R"}
+  - {actor: turing, method: matchCurrentValue, arguments: {expected: "x"}}
+  - {actor: turing, method: put, arguments: {value: " "}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
 - states: ["4", "5"]
   actions:
-  - {actor: turing, method: matchCurrentValue, arguments: "e"}
-  - {actor: turing, method: move, arguments: "R"}
+  - {actor: turing, method: matchCurrentValue, arguments: {expected: "e"}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
 - states: ["4", "4"]
   actions:
   - {actor: turing, method: isNone}
-  - {actor: turing, method: move, arguments: "L"}
-  - {actor: turing, method: move, arguments: "L"}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
 - states: ["5", "5"]
   actions:
   - {actor: turing, method: isAny}
-  - {actor: turing, method: move, arguments: "R"}
-  - {actor: turing, method: move, arguments: "R"}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
+  - {actor: turing, method: move, arguments: {direction: "R"}}
 - states: ["5", "101"]
   actions:
   - {actor: turing, method: isNone}
-  - {actor: turing, method: put, arguments: "0"}
-  - {actor: turing, method: move, arguments: "L"}
-  - {actor: turing, method: move, arguments: "L"}
+  - {actor: turing, method: put, arguments: {value: "0"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
+  - {actor: turing, method: move, arguments: {direction: "L"}}
 ```
 
 ## Java API
@@ -202,7 +236,7 @@ System.out.println("Result: " + result.getResult());
 
 ### Writing an Actor
 
-Implement `IIActorRef<T>` and annotate methods with `@Action`:
+Implement `IIActorRef<T>` and annotate methods with `@Action`. Declare what the action takes as a record, and name it in `argsType`:
 
 ```java
 public class MyActor extends IIActorRef<MyActor> {
@@ -211,19 +245,35 @@ public class MyActor extends IIActorRef<MyActor> {
         super(name, null, system);
     }
 
-    @Action("process")
-    public ActionResult process(String filename) {
+    /**
+     * Which file to process.
+     *
+     * @param file the file's path
+     */
+    public record ProcessArgs(@NotNull String file) {}
+
+    @Action(value = "process", argsType = ProcessArgs.class)
+    public ActionResult process(ProcessArgs args) {
         // ... process the file
-        return new ActionResult(true, "Processed: " + filename);
+        return new ActionResult(true, "Processed: " + args.file());
     }
 }
 ```
 
-The `@Action` annotation value is the method name used in YAML. Returning `new ActionResult(false, ...)` causes the transition to fail and the interpreter tries the next transition.
+The `@Action` value is the name a workflow step writes under `method`, and each record component is a field under `arguments`. `@NotNull` on a component makes that field required in the generated JSON Schema; a component without it may be omitted, and arrives as null.
+
+An action that takes nothing keeps a plain `String` parameter and declares no `argsType`:
+
+```java
+@Action("printTape")
+public ActionResult printTape(String args) { ... }
+```
+
+Returning `new ActionResult(false, ...)` causes the transition to fail and the interpreter tries the next transition.
 
 ## Dynamic Actor Loading
 
-Actors can be loaded at runtime from external JARs (including Maven coordinates):
+Actors can be loaded at runtime from external JARs (including Maven coordinates). `DynamicActorLoaderActor` dispatches on its own string protocol rather than declaring `argsType`, so these two actions take positional values:
 
 ```yaml
 steps:
@@ -245,6 +295,8 @@ steps:
 - **YAML Workflow** — Define workflows in YAML format
 - **Turing-complete** — Conditional branching and loops via state transitions
 - **`@Action` annotation** — Simple method-level action registration
+- **Declared arguments** — An action names the record it takes, so a caller can be told the shape instead of reading the method
+- **JEXL expressions** — A `jexl:` value is evaluated and reaches the action with its type intact
 - **Name-based dispatch** — `ActionDispatcher` finds the method a workflow step names, and checks its arguments against the JSON Schema generated from the declared `argsType`
 - **Dynamic Actor Loading** — Load actors from external JARs at runtime via Maven coordinates
 - **Subworkflows** — Split and reuse workflow definitions
@@ -254,7 +306,7 @@ steps:
 
 ## References
 
-- **Javadoc**: [API Reference](https://javadoc.io/doc/com.scivicslab/turing-workflow/4.0.0)
+- **Javadoc**: [API Reference](https://javadoc.io/doc/com.scivicslab/turing-workflow/4.1.0)
 - **POJO-actor**: [GitHub](https://github.com/scivicslab/POJO-actor)
 - **pojo-actor-distributed**: [GitHub](https://github.com/scivicslab/pojo-actor-distributed) — carries messages between actor systems in different processes
 - **Turing-workflow-plugins**: [GitHub](https://github.com/scivicslab/Turing-workflow-plugins)
