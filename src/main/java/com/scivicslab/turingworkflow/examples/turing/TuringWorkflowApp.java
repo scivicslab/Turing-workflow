@@ -30,14 +30,12 @@ import java.io.InputStream;
  * <p>This application demonstrates how to use the actor-WF workflow interpreter
  * to execute Turing machine operations defined in YAML workflow files.</p>
  *
+ * <p>The machine is driven by {@link TuringActionIIAR}, whose actions declare what they take.</p>
+ *
  * <p>Usage:</p>
  * <pre>
- * # Part 2-1/2-2: Run with callByActionName() version (TuringIIAR)
- * mvn exec:java -Dexec.mainClass="com.scivicslab.turing.TuringWorkflowApp" -Dexec.args="turing83"
- * mvn exec:java -Dexec.mainClass="com.scivicslab.turing.TuringWorkflowApp" -Dexec.args="turing87"
- *
- * # Part 2-3: Run with @Action annotation version (TuringActionIIAR)
- * mvn exec:java -Dexec.mainClass="com.scivicslab.turing.TuringWorkflowApp" -Dexec.args="turing87-array --action"
+ * mvn exec:java -Dexec.mainClass="com.scivicslab.turingworkflow.examples.turing.TuringWorkflowApp" -Dexec.args="turing83"
+ * mvn exec:java -Dexec.mainClass="com.scivicslab.turingworkflow.examples.turing.TuringWorkflowApp" -Dexec.args="turing87"
  * </pre>
  *
  * @author devteam@scivics-lab.com
@@ -47,50 +45,36 @@ public class TuringWorkflowApp {
     /**
      * Main entry point for the Turing workflow application.
      *
-     * @param args command line arguments - workflow name and optional --action flag
+     * @param args command line arguments - the workflow name
      */
     public static void main(String[] args) {
         if (args.length == 0) {
-            System.err.println("Usage: TuringWorkflowApp <workflow-name> [--action]");
+            System.err.println("Usage: TuringWorkflowApp <workflow-name>");
             System.err.println();
             System.err.println("Examples:");
-            System.err.println("  TuringWorkflowApp turing83           # Part 2-1/2-2 (callByActionName)");
-            System.err.println("  TuringWorkflowApp turing87           # Part 2-1/2-2 (callByActionName)");
-            System.err.println("  TuringWorkflowApp turing87-array --action  # Part 2-3 (@Action annotation)");
+            System.err.println("  TuringWorkflowApp turing83");
+            System.err.println("  TuringWorkflowApp turing87");
             System.exit(1);
         }
 
-        String workflowName = args[0];
-        boolean useActionAnnotation = args.length > 1 && args[1].equals("--action");
-        String yamlPath = "/examples/" + workflowName + ".yaml";
+        String yamlPath = "/examples/" + args[0] + ".yaml";
 
         TuringWorkflowApp app = new TuringWorkflowApp();
-        app.runWorkflow(yamlPath, useActionAnnotation);
+        app.runWorkflow(yamlPath);
     }
 
     /**
      * Executes a Turing machine workflow from a YAML file.
      *
      * @param yamlPath the resource path to the YAML workflow file
-     * @param useActionAnnotation if true, use TuringActionIIAR (@Action version)
      */
-    public void runWorkflow(String yamlPath, boolean useActionAnnotation) {
+    public void runWorkflow(String yamlPath) {
         IIActorSystem system = new IIActorSystem("turing-system");
 
         try {
             // Create Turing machine actor
             Turing turing = new Turing();
-            IIActorRef<Turing> turingActor;
-
-            if (useActionAnnotation) {
-                // Part 2-3: @Action annotation version
-                turingActor = new TuringActionIIAR("turing", turing, system);
-                System.out.println("Using @Action annotation version (TuringActionIIAR)");
-            } else {
-                // Part 2-1/2-2: callByActionName() version
-                turingActor = new TuringIIAR("turing", turing, system);
-                System.out.println("Using callByActionName() version (TuringIIAR)");
-            }
+            IIActorRef<Turing> turingActor = new TuringActionIIAR("turing", turing, system);
             system.addIIActor(turingActor);
 
             // Create interpreter
@@ -126,14 +110,5 @@ public class TuringWorkflowApp {
             system.terminateIIActors();
             system.terminate();
         }
-    }
-
-    /**
-     * Executes a Turing machine workflow (backward compatible).
-     *
-     * @param yamlPath the resource path to the YAML workflow file
-     */
-    public void runWorkflow(String yamlPath) {
-        runWorkflow(yamlPath, false);
     }
 }

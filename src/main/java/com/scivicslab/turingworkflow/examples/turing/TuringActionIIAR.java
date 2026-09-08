@@ -27,14 +27,14 @@ import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 
 /**
- * Interpreter-interfaced actor reference for Turing machine using @Action annotation.
+ * Interpreter-interfaced actor reference for a Turing machine.
  *
- * <p>This is the Part 2-3 version that uses {@code @Action} annotations instead of
- * overriding {@code callByActionName()}. Compare with {@link TuringIIAR} for the
- * Part 2-2 switch-statement approach.</p>
+ * <p>Each action declares the record it takes in {@code argsType}, so a workflow step writes
+ * {@code value: "e"} rather than a positional string, and the argument is checked against the
+ * JSON Schema generated from that record before the action runs. A caller in another process
+ * can ask what an action takes instead of reading this file.</p>
  *
  * @author devteam@scivics-lab.com
- * @see TuringIIAR
  */
 public class TuringActionIIAR extends IIActorRef<Turing> {
 
