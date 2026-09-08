@@ -5,9 +5,9 @@ steps:
   actions:
   - actor: loader
     method: loadJar
-    arguments: "com.scivicslab:turing-workflow:3.0.0"
+    arguments: "com.scivicslab:turing-workflow:4.2.0-SNAPSHOT"
 - states: ["1", "end"]
   actions:
   - actor: loader
     method: createChild
-    arguments: '["loader", "turing", "com.scivicslab.turingworkflow.examples.turing.TuringActionIIAR"]'
+    arguments: '["loader", "turing", "com.scivicslab.turingworkflow.examples.turing.TuringIIAR"]'

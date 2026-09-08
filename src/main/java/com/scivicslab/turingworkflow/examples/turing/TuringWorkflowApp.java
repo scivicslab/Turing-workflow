@@ -30,7 +30,7 @@ import java.io.InputStream;
  * <p>This application demonstrates how to use the actor-WF workflow interpreter
  * to execute Turing machine operations defined in YAML workflow files.</p>
  *
- * <p>The machine is driven by {@link TuringActionIIAR}, whose actions declare what they take.</p>
+ * <p>The machine is driven by {@link TuringIIAR}, whose actions declare what they take.</p>
  *
  * <p>Usage:</p>
  * <pre>
@@ -74,7 +74,7 @@ public class TuringWorkflowApp {
         try {
             // Create Turing machine actor
             Turing turing = new Turing();
-            IIActorRef<Turing> turingActor = new TuringActionIIAR("turing", turing, system);
+            IIActorRef<Turing> turingActor = new TuringIIAR("turing", turing, system);
             system.addIIActor(turingActor);
 
             // Create interpreter

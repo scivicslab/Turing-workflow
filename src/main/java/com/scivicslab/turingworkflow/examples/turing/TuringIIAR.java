@@ -36,27 +36,27 @@ import com.scivicslab.turingworkflow.workflow.IIActorSystem;
  *
  * @author devteam@scivics-lab.com
  */
-public class TuringActionIIAR extends IIActorRef<Turing> {
+public class TuringIIAR extends IIActorRef<Turing> {
 
     /**
-     * Constructs a new TuringActionIIAR for dynamic loading.
+     * Constructs a new TuringIIAR for dynamic loading.
      * Creates a new Turing machine instance automatically.
      *
      * @param actorName the name of the actor
      * @param system the actor system managing this actor
      */
-    public TuringActionIIAR(String actorName, IIActorSystem system) {
+    public TuringIIAR(String actorName, IIActorSystem system) {
         super(actorName, new Turing(), system);
     }
 
     /**
-     * Constructs a new TuringActionIIAR with the specified actor name and Turing instance.
+     * Constructs a new TuringIIAR with the specified actor name and Turing instance.
      *
      * @param actorName the name of the actor
      * @param turing the Turing machine instance
      * @param system the actor system managing this actor
      */
-    public TuringActionIIAR(String actorName, Turing turing, IIActorSystem system) {
+    public TuringIIAR(String actorName, Turing turing, IIActorSystem system) {
         super(actorName, turing, system);
     }
 
