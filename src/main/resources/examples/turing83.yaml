@@ -18,32 +18,38 @@ steps:
   actions:
   - actor: turing
     method: put
-    arguments: "0"
+    arguments:
+      value: "0"
   - actor: turing
     method: move
-    arguments: "R"
+    arguments:
+      direction: "R"
 - states:
   - "3"
   - "4"
   actions:
   - actor: turing
     method: move
-    arguments: "R"
+    arguments:
+      direction: "R"
 - states:
   - "4"
   - "5"
   actions:
   - actor: turing
     method: put
-    arguments: "1"
+    arguments:
+      value: "1"
   - actor: turing
     method: move
-    arguments: "R"
+    arguments:
+      direction: "R"
 - states:
   - "5"
   - "1"
   actions:
   - actor: turing
     method: move
-    arguments: "R"
+    arguments:
+      direction: "R"
 

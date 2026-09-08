@@ -21,6 +21,8 @@ import static com.scivicslab.pojoactor.action.ActionArgs.*;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
+
+import jakarta.validation.constraints.NotNull;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 
@@ -58,24 +60,43 @@ public class TuringActionIIAR extends IIActorRef<Turing> {
         super(actorName, turing, system);
     }
 
+    /**
+     * The symbol to write at the head's current position.
+     *
+     * @param value the symbol to write
+     */
+    public record PutArgs(@NotNull String value) {}
+
+    /**
+     * Which way to move the head.
+     *
+     * @param direction {@code "L"} or {@code "R"}
+     */
+    public record MoveArgs(@NotNull String direction) {}
+
+    /**
+     * The symbol the head's current position is compared against.
+     *
+     * @param expected the symbol to compare with
+     */
+    public record MatchCurrentValueArgs(@NotNull String expected) {}
+
     @Action("initMachine")
     public ActionResult initMachine(String args) {
         this.object.initMachine();
         return new ActionResult(true, "Machine initialized");
     }
 
-    @Action("put")
-    public ActionResult put(String args) {
-        String value = getFirst(args);
-        this.object.put(value);
-        return new ActionResult(true, "Put " + value);
+    @Action(value = "put", argsType = PutArgs.class)
+    public ActionResult put(PutArgs args) {
+        this.object.put(args.value());
+        return new ActionResult(true, "Put " + args.value());
     }
 
-    @Action("move")
-    public ActionResult move(String args) {
-        String direction = getFirst(args);
-        this.object.move(direction);
-        return new ActionResult(true, "Moved " + direction);
+    @Action(value = "move", argsType = MoveArgs.class)
+    public ActionResult move(MoveArgs args) {
+        this.object.move(args.direction());
+        return new ActionResult(true, "Moved " + args.direction());
     }
 
     @Action("printTape")
@@ -92,10 +113,9 @@ public class TuringActionIIAR extends IIActorRef<Turing> {
 
     // Conditional branching actions (used in turing87)
 
-    @Action("matchCurrentValue")
-    public ActionResult matchCurrentValue(String args) {
-        String expected = getFirst(args);
-        boolean match = this.object.matchCurrentValue(expected);
+    @Action(value = "matchCurrentValue", argsType = MatchCurrentValueArgs.class)
+    public ActionResult matchCurrentValue(MatchCurrentValueArgs args) {
+        boolean match = this.object.matchCurrentValue(args.expected());
         return new ActionResult(match, "match=" + match);
     }
 

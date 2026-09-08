@@ -12,7 +12,9 @@ package com.scivicslab.turingworkflow.workflow;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
-import org.json.JSONArray;
+
+import jakarta.validation.constraints.NotNull;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -55,24 +57,25 @@ public class ParallelMapActor extends IIActorRef<Object> {
         this.parentSystem = system;
     }
 
-    @Action("run")
-    public ActionResult run(String args) {
-        final String subYaml;
-        final String inListName;
-        final String outListName;
-        final int maxParallel;
-        final String baseDir;
-        try {
-            JSONArray a = new JSONArray(args);
-            subYaml = a.getString(0);
-            inListName = a.getString(1);
-            outListName = a.getString(2);
-            maxParallel = a.length() >= 4 ? a.getInt(3) : DEFAULT_PARALLEL;
-            baseDir = a.length() >= 5 ? a.getString(4) : ".";
-        } catch (Exception e) {
-            return new ActionResult(false, "parallel-map.run: expected "
-                    + "[\"sub.yaml\",\"inputList\",\"outputList\",maxParallel?,baseDir?]: " + e.getMessage());
-        }
+    /**
+     * Which sub-workflow to run over which list, and where to put what it returns.
+     *
+     * @param subWorkflow the sub-workflow's YAML file name
+     * @param inputList   the name of the list actor holding the items
+     * @param outputList  the name of the list actor the results are appended to
+     * @param maxParallel how many items run at once; six when absent
+     * @param baseDir     the directory the sub-workflow runs in; the current directory when absent
+     */
+    public record MapArgs(@NotNull String subWorkflow, @NotNull String inputList,
+                          @NotNull String outputList, Integer maxParallel, String baseDir) {}
+
+    @Action(value = "run", argsType = MapArgs.class)
+    public ActionResult run(MapArgs args) {
+        final String subYaml = args.subWorkflow();
+        final String inListName = args.inputList();
+        final String outListName = args.outputList();
+        final int maxParallel = args.maxParallel() != null ? args.maxParallel() : DEFAULT_PARALLEL;
+        final String baseDir = args.baseDir() != null ? args.baseDir() : ".";
 
         // Read the input items from the parent's list actor.
         IIActorRef<?> inList = parentSystem.getIIActor(inListName);
@@ -87,7 +90,8 @@ public class ParallelMapActor extends IIActorRef<Object> {
         }
         List<String> items = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
-            ActionResult r = inList.callByActionName("get", String.valueOf(i));
+            ActionResult r = inList.callByActionName("get",
+                    new JSONObject().put("index", i).toString());
             items.add(r.isSuccess() ? r.getResult() : "");
         }
 
@@ -117,7 +121,8 @@ public class ParallelMapActor extends IIActorRef<Object> {
             return new ActionResult(false, "parallel-map.run: output list not found: " + outListName);
         }
         for (String o : outputs) {
-            outList.callByActionName("add", o == null ? "" : o);
+            outList.callByActionName("add",
+                    new JSONObject().put("value", o == null ? "" : o).toString());
         }
         return new ActionResult(true, "parallel-map: mapped " + items.size() + " item(s)");
     }

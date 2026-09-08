@@ -46,6 +46,36 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
      */
     private static final ActionSchemaRegistry SCHEMAS = new ActionSchemaRegistry();
 
+    /**
+     * The object this actor wraps, for an expression to reach.
+     *
+     * <p>{@code ActorRef} keeps it as a protected field, so only a subclass can hand it out.
+     * {@link WorkflowExpressions} needs it because an expression must reach the wrapped object's
+     * typed methods; going through {@code callByActionName} would return an
+     * {@link com.scivicslab.pojoactor.action.ActionResult}, whose value is text.</p>
+     *
+     * <p>Reading it here does not go through the mailbox. Actions invoked by name do not either,
+     * so this adds no sharing that was not already present.</p>
+     *
+     * @return the wrapped object, or {@code null} when this actor wraps nothing
+     */
+    public T wrapped() {
+        return object;
+    }
+
+    /**
+     * The one registry every actor in this JVM validates against.
+     *
+     * <p>Exposed so that whoever adds a jar while the process is running can call
+     * {@link ActionSchemaRegistry#addFrom(ClassLoader)} on it. Dispatchers hold this object
+     * rather than a copy, so schemas added afterwards take effect for actors already created.</p>
+     *
+     * @return the shared registry; never {@code null}
+     */
+    public static ActionSchemaRegistry sharedSchemaRegistry() {
+        return SCHEMAS;
+    }
+
     private final ActionDispatcher dispatcher = new ActionDispatcher(this, SCHEMAS);
 
     /**

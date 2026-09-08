@@ -290,42 +290,52 @@ public class Interpreter {
      * @param action the action containing arguments
      * @return JSON string (array for String/List, object for Map)
      */
+    /** Marks an argument value as an expression rather than text to substitute into. */
+    private static final String JEXL_PREFIX = "jexl:";
+
+    /**
+     * Evaluates one argument written as an expression, keeping the type of what it answers.
+     *
+     * <p>{@code $(actor.method)} answers through {@link com.scivicslab.pojoactor.action.ActionResult},
+     * whose value is text, so a number arrives as {@code "3"} and an argument declared as a number
+     * is refused. An expression reaches the object an actor wraps and calls its own methods, so
+     * {@code jexl: actors.get("calc:i").get()} arrives as {@code 3.0}.</p>
+     *
+     * @param expression the expression, without the {@code jexl:} marker
+     * @return whatever it evaluates to, or the text of the failure when it cannot be evaluated
+     */
+    private Object evaluateArgumentExpression(String expression) {
+        try {
+            Object outcome = new WorkflowExpressions(system, selfActorRef, currentState).evaluate(expression);
+            return outcome == null ? JSONObject.NULL : outcome;
+        } catch (Exception e) {
+            logger.warning("Argument expression failed: " + expression + " -- " + e.getMessage());
+            return JSONObject.NULL;
+        }
+    }
+
     private String convertArgumentsToJson(Action action) {
         Object arguments = action.getArguments();
 
-        // null or empty list → return empty JSON array "[]"
         if (arguments == null) {
             return "[]";
         }
 
         if (arguments instanceof String) {
-            // Single string argument: expand variables and wrap in JSON array
-            String expanded = expandVariables((String) arguments);
             JSONArray jsonArray = new JSONArray();
-            jsonArray.put(expanded);
+            jsonArray.put(argumentValue(arguments));
             return jsonArray.toString();
         } else if (arguments instanceof List) {
-            // Convert List to JSON array, expanding variables in string elements
             JSONArray jsonArray = new JSONArray();
             for (Object item : (List<?>) arguments) {
-                if (item instanceof String) {
-                    jsonArray.put(expandVariables((String) item));
-                } else {
-                    jsonArray.put(item);
-                }
+                jsonArray.put(argumentValue(item));
             }
             return jsonArray.toString();
         } else if (arguments instanceof Map) {
-            // Convert Map to JSON object, expanding variables in string values
             Map<?, ?> map = (Map<?, ?>) arguments;
             JSONObject jsonObject = new JSONObject();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
-                Object value = entry.getValue();
-                if (value instanceof String) {
-                    jsonObject.put(entry.getKey().toString(), expandVariables((String) value));
-                } else {
-                    jsonObject.put(entry.getKey().toString(), value);
-                }
+                jsonObject.put(entry.getKey().toString(), argumentValue(entry.getValue()));
             }
             return jsonObject.toString();
         } else {
@@ -336,66 +346,22 @@ public class Interpreter {
     }
 
     /**
-     * Expands variable references in a string.
+     * Turns one argument as the workflow wrote it into the value that reaches the action.
      *
-     * <p>Supports two types of expansion:</p>
-     * <ul>
-     *   <li>{@code this} or {@code .} - expands to the current actor's name</li>
-     *   <li>{@code ${varName}} - expands from JSON state or last result</li>
-     *   <li>{@code $(actor.method)} - calls actor method and embeds the result</li>
-     * </ul>
+     * <p>Text beginning with {@code jexl:} is evaluated as an expression and reaches the action
+     * with the type of what it answers. Everything else reaches the action as written.</p>
      *
-     * @param input the string containing patterns to expand
-     * @return the expanded string
+     * @param written the argument as the workflow wrote it
+     * @return the value to place in the JSON handed to the action
      */
-    private String expandVariables(String input) {
-        if (input == null) return null;
-        // Expand $(actor.method) inline method calls first
-        input = expandMethodCalls(input);
-        if (selfActorRef != null) {
-            // Resolve "this" and "." to the actual actor name
-            if ("this".equals(input) || ".".equals(input)) {
-                return selfActorRef.getName();
-            }
-            return selfActorRef.expandVariables(input);
+    private Object argumentValue(Object written) {
+        if (written instanceof String text && text.startsWith(JEXL_PREFIX)) {
+            return evaluateArgumentExpression(text.substring(JEXL_PREFIX.length()));
         }
-        return input;
+        return written;
     }
 
-    /**
-     * Expands {@code $(actor.method)} patterns by calling the named method on the named actor
-     * and substituting the result inline.
-     */
-    private String expandMethodCalls(String input) {
-        if (input == null || !input.contains("$(")) return input;
-        StringBuilder result = new StringBuilder();
-        int pos = 0;
-        while (true) {
-            int start = input.indexOf("$(", pos);
-            if (start == -1) { result.append(input.substring(pos)); break; }
-            int end = input.indexOf(")", start + 2);
-            if (end == -1) { result.append(input.substring(pos)); break; }
-            result.append(input, pos, start);
-            String expr = input.substring(start + 2, end); // e.g. "calc:i.get"
-            int dot = expr.lastIndexOf('.');
-            if (dot > 0 && system != null) {
-                String actorName = expr.substring(0, dot);
-                String methodName = expr.substring(dot + 1);
-                IIActorRef<?> actor = system.getIIActor(actorName);
-                if (actor != null) {
-                    ActionResult ar = actor.callByActionName(methodName, "");
-                    result.append(ar != null ? ar.getResult() : "");
-                } else {
-                    result.append(input, start, end + 1);
-                }
-            } else {
-                result.append(input, start, end + 1);
-            }
-            pos = end + 1;
-        }
-        return result.toString();
-    }
-
+    
     /**
      * Returns the currently loaded workflow code.
      *

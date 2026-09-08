@@ -211,19 +211,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             }
             URL jarUrl = path.toUri().toURL();
 
-            // Use shared ClassLoader: add URL to single shared instance
-            if (sharedClassLoader == null) {
-                sharedClassLoader = new SharedClassLoader(
-                    new URL[]{jarUrl},
-                    getClass().getClassLoader()
-                );
-            } else {
-                sharedClassLoader.addURL(jarUrl);
-            }
-
-            loadedJarPaths.add(jarPath);
-            // Keep legacy map updated for backward compatibility
-            loadedJars.put(jarPath, sharedClassLoader);
+            addToSharedClassLoader(jarPath, jarUrl);
 
             return new ActionResult(true, "Loaded JAR: " + jarPath);
 
@@ -533,7 +521,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             }
 
             // Find provider using ServiceLoader
-            ServiceLoader<ActorProvider> loader = ServiceLoader.load(ActorProvider.class);
+            ServiceLoader<ActorProvider> loader = providerLoader();
             ActorProvider targetProvider = null;
 
             for (ActorProvider provider : loader) {
@@ -560,13 +548,54 @@ public class DynamicActorLoaderActor implements CallableByActionName {
     }
 
     /**
+     * Puts one jar into the shared class loader and reads whatever action schemas it carries.
+     *
+     * <p>The schema registry is built when {@link IIActorRef} is first loaded, from the classpath
+     * the JVM started with. A jar added here is not on that classpath, so its schemas have to be
+     * read now; otherwise every {@code argsType} action the jar declares would dispatch without
+     * being validated, and nothing would say so.</p>
+     *
+     * @param jarPath the resolved path, used as the key that marks this jar as loaded
+     * @param jarUrl  the same jar as a URL for the class loader
+     */
+    private void addToSharedClassLoader(String jarPath, URL jarUrl) {
+        if (sharedClassLoader == null) {
+            sharedClassLoader = new SharedClassLoader(new URL[]{jarUrl}, getClass().getClassLoader());
+        } else {
+            sharedClassLoader.addURL(jarUrl);
+        }
+        loadedJarPaths.add(jarPath);
+        loadedJars.put(jarPath, sharedClassLoader);
+
+        int added = IIActorRef.sharedSchemaRegistry().addFrom(sharedClassLoader);
+        if (added > 0) {
+            logger.info("Read " + added + " action schema(s) from " + jarPath);
+        }
+    }
+
+    /**
+     * Returns the ServiceLoader that can see providers from jars added at run time.
+     *
+     * <p>{@code loadProvidersFromJar} puts every jar it is given into {@link #sharedClassLoader}.
+     * Looking providers up through the default class loader would only find those already on the
+     * system classpath, so a provider loaded at run time could be listed but never created.</p>
+     *
+     * @return a loader over the shared class loader when a jar has been added, otherwise the default
+     */
+    private ServiceLoader<ActorProvider> providerLoader() {
+        return sharedClassLoader == null
+            ? ServiceLoader.load(ActorProvider.class)
+            : ServiceLoader.load(ActorProvider.class, sharedClassLoader);
+    }
+
+    /**
      * Lists all available ActorProvider instances.
      *
      * @return ActionResult with provider list
      */
     private ActionResult listProviders() {
         try {
-            ServiceLoader<ActorProvider> loader = ServiceLoader.load(ActorProvider.class);
+            ServiceLoader<ActorProvider> loader = providerLoader();
             List<String> providerNames = new ArrayList<>();
 
             for (ActorProvider provider : loader) {
@@ -621,18 +650,8 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             Path path = Paths.get(jarPath);
             URL jarUrl = path.toUri().toURL();
 
-            // Add to shared ClassLoader (or reuse if already loaded)
             if (!loadedJarPaths.contains(jarPath)) {
-                if (sharedClassLoader == null) {
-                    sharedClassLoader = new SharedClassLoader(
-                        new URL[]{jarUrl},
-                        getClass().getClassLoader()
-                    );
-                } else {
-                    sharedClassLoader.addURL(jarUrl);
-                }
-                loadedJarPaths.add(jarPath);
-                loadedJars.put(jarPath, sharedClassLoader);
+                addToSharedClassLoader(jarPath, jarUrl);
             }
             URLClassLoader classLoader = sharedClassLoader;
 

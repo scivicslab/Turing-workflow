@@ -44,10 +44,11 @@ import java.util.logging.Logger;
  * writes at build time (see that class's Javadoc for the file naming and directory
  * convention: {@code action-schemas/<ClassName>.<actionName>.schema.json}).
  *
- * <p>Loading happens once, at construction time, by scanning every classpath root (both
- * exploded directories and packaged jars) for that {@code action-schemas/} resource
- * directory. No reflection over application classes happens here — only static-file reading
- * — so this class carries no Native Image reflection burden on its own.</p>
+ * <p>Construction scans every classpath root (both exploded directories and packaged jars)
+ * for that {@code action-schemas/} resource directory. {@link #addFrom(ClassLoader)} scans a
+ * further classloader afterwards, for jars that appear while the process is running. No
+ * reflection over application classes happens here — only static-file reading — so this class
+ * carries no Native Image reflection burden on its own.</p>
  *
  * <h2>Usage</h2>
  * <pre>{@code
@@ -89,6 +90,46 @@ public class ActionSchemaRegistry {
         } catch (IOException e) {
             logger.log(Level.WARNING, "Failed to load action schemas from " + resourceRoot, e);
         }
+    }
+
+    /**
+     * Reads any schemas visible to {@code classLoader} that this registry does not already hold.
+     *
+     * <p>Construction scans the classpath the JVM started with. A jar added later — by
+     * {@code DynamicActorLoaderActor} while a workflow is running — lands in a child class
+     * loader that the constructor never saw, so the schemas it carries would be missing and
+     * every action it declares would dispatch unvalidated. Calling this after adding such a jar
+     * puts them in.</p>
+     *
+     * <p>Entries already held are kept: {@code load} writes into the same map, so a second
+     * classloader that also sees the original classpath re-reads the same keys with the same
+     * values. Existing {@code ActionDispatcher} instances hold this object, not a copy, so they
+     * see the additions without being rebuilt.</p>
+     *
+     * @param classLoader  the classloader to scan
+     * @param resourceRoot the resource directory name to scan under
+     * @return how many schemas the registry gained
+     */
+    public int addFrom(ClassLoader classLoader, String resourceRoot) {
+        int before = schemas.size();
+        try {
+            load(classLoader, resourceRoot);
+        } catch (IOException e) {
+            logger.log(Level.WARNING, "Failed to load action schemas from " + resourceRoot, e);
+            return 0;
+        }
+        return schemas.size() - before;
+    }
+
+    /**
+     * Reads any schemas under {@link #DEFAULT_RESOURCE_ROOT} visible to {@code classLoader}
+     * that this registry does not already hold.
+     *
+     * @param classLoader the classloader to scan
+     * @return how many schemas the registry gained
+     */
+    public int addFrom(ClassLoader classLoader) {
+        return addFrom(classLoader, DEFAULT_RESOURCE_ROOT);
     }
 
     /**

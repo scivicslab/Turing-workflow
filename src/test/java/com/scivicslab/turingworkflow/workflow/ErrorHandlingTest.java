@@ -30,6 +30,8 @@ import org.junit.jupiter.api.Test;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
+
+import jakarta.validation.constraints.NotNull;
 import com.scivicslab.turingworkflow.plugin.MathPlugin;
 import com.scivicslab.turingworkflow.workflow.ReusableSubWorkflowCaller;
 import com.scivicslab.turingworkflow.workflow.SubWorkflowCaller;
@@ -68,15 +70,22 @@ public class ErrorHandlingTest {
     }
 
     static class DecisionActor extends IIActorRef<Void> {
+
+        /**
+         * The number the branch is decided on.
+         *
+         * @param value the number to store
+         */
+        public record ValueArgs(@NotNull Integer value) {}
         private int value = 0;
 
         public DecisionActor(String name, IIActorSystem system) {
             super(name, null, system);
         }
 
-        @Action("setValue")
-        public ActionResult setValue(String args) {
-            value = Integer.parseInt(getFirstArg(args));
+        @Action(value = "setValue", argsType = ValueArgs.class)
+        public ActionResult setValue(ValueArgs args) {
+            value = args.value();
             return new ActionResult(true, "Value set to: " + value);
         }
 
@@ -103,17 +112,38 @@ public class ErrorHandlingTest {
             super(actorName, object, system);
         }
 
-        @Action("add")
-        public ActionResult add(String args) { return this.object.callByActionName("add", args); }
+        /**
+         * The two numbers an arithmetic action works on.
+         *
+         * @param a the left operand
+         * @param b the right operand
+         */
+        public record OperandsArgs(@NotNull Integer a, @NotNull Integer b) {}
 
-        @Action("multiply")
-        public ActionResult multiply(String args) { return this.object.callByActionName("multiply", args); }
+        /**
+         * Who to greet.
+         *
+         * @param name the name put into the greeting
+         */
+        public record NameArgs(@NotNull String name) {}
+
+        // MathPlugin dispatches on its own string protocol, so each action rebuilds the
+        // JSON array that protocol expects. What a caller writes stays typed all the same.
+        private static String operands(OperandsArgs args) {
+            return new JSONArray().put(String.valueOf(args.a())).put(String.valueOf(args.b())).toString();
+        }
+
+        @Action(value = "add", argsType = OperandsArgs.class)
+        public ActionResult add(OperandsArgs args) { return this.object.callByActionName("add", operands(args)); }
+
+        @Action(value = "multiply", argsType = OperandsArgs.class)
+        public ActionResult multiply(OperandsArgs args) { return this.object.callByActionName("multiply", operands(args)); }
 
         @Action("getLastResult")
-        public ActionResult getLastResult(String args) { return this.object.callByActionName("getLastResult", args); }
+        public ActionResult getLastResult(String args) { return this.object.callByActionName("getLastResult", ""); }
 
-        @Action("greet")
-        public ActionResult greet(String args) { return this.object.callByActionName("greet", args); }
+        @Action(value = "greet", argsType = NameArgs.class)
+        public ActionResult greet(NameArgs args) { return this.object.callByActionName("greet", args.name()); }
     }
 
     @Deprecated
@@ -124,23 +154,23 @@ public class ErrorHandlingTest {
             super(name, null, system);
         }
 
-        @Action("executeSubWorkflow")
-        public ActionResult executeSubWorkflow(String args) {
+        @Action(value = "executeSubWorkflow", argsType = SubWorkflowCaller.SubWorkflowArgs.class)
+        public ActionResult executeSubWorkflow(SubWorkflowCaller.SubWorkflowArgs args) {
             IIActorSystem actorSystem = (IIActorSystem) system();
             Interpreter subInterpreter = new Interpreter.Builder()
                 .loggerName("sub-workflow")
                 .team(actorSystem)
                 .build();
 
-            String workflowFile = getFirstArg(args);
+            String workflowFile = args.yaml();
             InputStream yamlInput = getClass().getResourceAsStream("/workflows/" + workflowFile);
             if (yamlInput != null) {
                 subInterpreter.readYaml(yamlInput);
                 subInterpreter.runUntilEnd();
                 subWorkflowExecutions++;
-                return new ActionResult(true, "Sub-workflow executed: " + args);
+                return new ActionResult(true, "Sub-workflow executed: " + workflowFile);
             }
-            return new ActionResult(false, "Sub-workflow not found: " + args);
+            return new ActionResult(false, "Sub-workflow not found: " + workflowFile);
         }
 
         public int getSubWorkflowExecutions() { return subWorkflowExecutions; }

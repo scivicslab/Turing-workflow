@@ -12,6 +12,8 @@ package com.scivicslab.turingworkflow.workflow;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
+
+import jakarta.validation.constraints.NotNull;
 import org.json.JSONArray;
 
 import java.util.ArrayList;
@@ -43,58 +45,73 @@ public class ListActor extends IIActorRef<List<String>> {
         super(name, new ArrayList<>(), system);
     }
 
-    @Action("add")
-    public ActionResult add(String args) {
-        String value = parseFirstArgument(args);
+    /**
+     * An element's text.
+     *
+     * @param value the text to add, look for, or store
+     */
+    public record ValueArgs(@NotNull String value) {}
+
+    /**
+     * A position in the list.
+     *
+     * <p>A workflow that needs the position from elsewhere writes it as an expression —
+     * {@code index: "jexl: actors.get('calc:i').get()"} — which arrives as a number.</p>
+     *
+     * @param index zero-based position
+     */
+    public record IndexArgs(@NotNull Integer index) {}
+
+    /**
+     * Which position to overwrite, and with what.
+     *
+     * @param index zero-based position
+     * @param value the text to store there
+     */
+    public record SetArgs(@NotNull Integer index, @NotNull String value) {}
+
+    /**
+     * What to put between elements when joining them.
+     *
+     * @param separator the text placed between elements
+     */
+    public record SeparatorArgs(@NotNull String separator) {}
+
+    @Action(value = "add", argsType = ValueArgs.class)
+    public ActionResult add(ValueArgs args) {
+        String value = args.value();
         object.add(value);
         return new ActionResult(true, "true");
     }
 
-    @Action("get")
-    public ActionResult get(String args) {
-        String indexStr = parseFirstArgument(args);
-        try {
-            int i = (indexStr == null || indexStr.isBlank()) ? 0 : Integer.parseInt(indexStr.trim());
-            if (i < 0 || i >= object.size()) {
-                return new ActionResult(false,
-                        "list.get: index " + i + " out of range (size=" + object.size() + ")");
-            }
-            return new ActionResult(true, object.get(i));
-        } catch (NumberFormatException e) {
-            return new ActionResult(false, "list.get: invalid index: " + indexStr);
+    @Action(value = "get", argsType = IndexArgs.class)
+    public ActionResult get(IndexArgs args) {
+        int i = args.index();
+        if (i < 0 || i >= object.size()) {
+            return new ActionResult(false,
+                    "list.get: index " + i + " out of range (size=" + object.size() + ")");
         }
+        return new ActionResult(true, object.get(i));
     }
 
-    @Action("set")
-    public ActionResult set(String args) {
-        try {
-            JSONArray arr = new JSONArray(args);
-            int i = arr.getInt(0);
-            String value = arr.getString(1);
-            if (i < 0 || i >= object.size()) {
-                return new ActionResult(false,
-                        "list.set: index " + i + " out of range (size=" + object.size() + ")");
-            }
-            String old = object.set(i, value);
-            return new ActionResult(true, old);
-        } catch (Exception e) {
-            return new ActionResult(false, "list.set: expected [index, value]: " + e.getMessage());
+    @Action(value = "set", argsType = SetArgs.class)
+    public ActionResult set(SetArgs args) {
+        int i = args.index();
+        if (i < 0 || i >= object.size()) {
+            return new ActionResult(false,
+                    "list.set: index " + i + " out of range (size=" + object.size() + ")");
         }
+        return new ActionResult(true, object.set(i, args.value()));
     }
 
-    @Action("remove")
-    public ActionResult remove(String args) {
-        String indexStr = parseFirstArgument(args);
-        try {
-            int i = Integer.parseInt(indexStr.trim());
-            if (i < 0 || i >= object.size()) {
-                return new ActionResult(false,
-                        "list.remove: index " + i + " out of range (size=" + object.size() + ")");
-            }
-            return new ActionResult(true, object.remove(i));
-        } catch (NumberFormatException e) {
-            return new ActionResult(false, "list.remove: invalid index: " + indexStr);
+    @Action(value = "remove", argsType = IndexArgs.class)
+    public ActionResult remove(IndexArgs args) {
+        int i = args.index();
+        if (i < 0 || i >= object.size()) {
+            return new ActionResult(false,
+                    "list.remove: index " + i + " out of range (size=" + object.size() + ")");
         }
+        return new ActionResult(true, object.remove(i));
     }
 
     @Action("size")
@@ -113,21 +130,21 @@ public class ListActor extends IIActorRef<List<String>> {
         return new ActionResult(true, "cleared");
     }
 
-    @Action("contains")
-    public ActionResult contains(String args) {
-        String value = parseFirstArgument(args);
+    @Action(value = "contains", argsType = ValueArgs.class)
+    public ActionResult contains(ValueArgs args) {
+        String value = args.value();
         return new ActionResult(true, String.valueOf(object.contains(value)));
     }
 
-    @Action("indexOf")
-    public ActionResult indexOf(String args) {
-        String value = parseFirstArgument(args);
+    @Action(value = "indexOf", argsType = ValueArgs.class)
+    public ActionResult indexOf(ValueArgs args) {
+        String value = args.value();
         return new ActionResult(true, String.valueOf(object.indexOf(value)));
     }
 
-    @Action("join")
-    public ActionResult join(String args) {
-        String separator = parseFirstArgument(args);
+    @Action(value = "join", argsType = SeparatorArgs.class)
+    public ActionResult join(SeparatorArgs args) {
+        String separator = args.separator();
         String sep = (separator == null || separator.isEmpty()) ? ", " : separator;
         return new ActionResult(true, String.join(sep, object));
     }

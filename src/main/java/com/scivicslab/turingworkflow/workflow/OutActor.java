@@ -13,6 +13,10 @@ package com.scivicslab.turingworkflow.workflow;
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
 
+import jakarta.validation.constraints.NotNull;
+
+import java.util.List;
+
 /**
  * Built-in print output actor. Auto-created on first use.
  *
@@ -29,30 +33,40 @@ public class OutActor extends IIActorRef<Void> {
         super(name, null, system);
     }
 
-    @Action("print")
-    public ActionResult print(String args) {
-        String msg = parseFirstArgument(args);
+    /**
+     * One line of text to write out.
+     *
+     * @param message the text to write
+     */
+    public record MessageArgs(@NotNull String message) {}
+
+    /**
+     * A format string and the values it consumes.
+     *
+     * @param format the {@link String#format} pattern
+     * @param params the values substituted into it; may be omitted when the pattern takes none
+     */
+    public record PrintfArgs(@NotNull String format, List<Object> params) {}
+
+    @Action(value = "print", argsType = MessageArgs.class)
+    public ActionResult print(MessageArgs args) {
+        String msg = args.message();
         System.out.println(msg);
         return new ActionResult(true, msg);
     }
 
-    @Action("error")
-    public ActionResult error(String args) {
-        String msg = parseFirstArgument(args);
+    @Action(value = "error", argsType = MessageArgs.class)
+    public ActionResult error(MessageArgs args) {
+        String msg = args.message();
         System.err.println(msg);
         return new ActionResult(true, msg);
     }
 
-    @Action("printf")
-    public ActionResult printf(String args) {
+    @Action(value = "printf", argsType = PrintfArgs.class)
+    public ActionResult printf(PrintfArgs args) {
         try {
-            org.json.JSONArray arr = new org.json.JSONArray(args);
-            String fmt = arr.getString(0);
-            Object[] params = new Object[arr.length() - 1];
-            for (int i = 1; i < arr.length(); i++) {
-                params[i - 1] = arr.get(i);
-            }
-            String result = String.format(fmt, params);
+            List<Object> values = args.params() == null ? List.of() : args.params();
+            String result = String.format(args.format(), values.toArray());
             System.out.print(result);
             return new ActionResult(true, result);
         } catch (Exception e) {

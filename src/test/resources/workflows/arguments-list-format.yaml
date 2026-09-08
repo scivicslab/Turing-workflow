@@ -2,20 +2,20 @@ name: arguments-list-format-workflow
 steps:
   - states: ["0", "1"]
     actions:
-      - actor: math
-        method: add
+      - actor: recorder
+        method: record
         arguments:
           - "10"
           - "5"
   - states: ["1", "2"]
     actions:
-      - actor: math
-        method: multiply
+      - actor: recorder
+        method: record
         arguments:
           - "3"
           - "4"
   - states: ["2", "end"]
     actions:
-      - actor: math
-        method: getLastResult
+      - actor: recorder
+        method: record
         arguments: []

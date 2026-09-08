@@ -50,6 +50,7 @@ public class WorkflowInterpreterTest {
 
     private IIActorSystem system;
     private MathPlugin mathPlugin;
+    private java.util.List<String> recorded;
 
     @BeforeEach
     public void setUp() {
@@ -59,6 +60,24 @@ public class WorkflowInterpreterTest {
         // Register math actor
         TestMathIIAR mathActor = new TestMathIIAR("math", mathPlugin, system);
         system.addIIActor(mathActor);
+
+        // An action declaring no argsType still receives the raw string the Interpreter built,
+        // which is what the argument-format tests below read.
+        recorded = new java.util.ArrayList<>();
+        system.addIIActor(new ArgumentRecorderIIAR("recorder", recorded, system));
+    }
+
+    /** Keeps every raw argument string handed to an action that declares no argsType. */
+    private static class ArgumentRecorderIIAR extends IIActorRef<java.util.List<String>> {
+        ArgumentRecorderIIAR(String actorName, java.util.List<String> sink, IIActorSystem system) {
+            super(actorName, sink, system);
+        }
+
+        @com.scivicslab.pojoactor.action.Action("record")
+        public ActionResult record(String args) {
+            this.object.add(args);
+            return new ActionResult(true, "recorded");
+        }
     }
 
     /**
@@ -70,17 +89,40 @@ public class WorkflowInterpreterTest {
             super(actorName, object, system);
         }
 
-        @com.scivicslab.pojoactor.action.Action("add")
-        public ActionResult add(String args) { return this.object.callByActionName("add", args); }
+        /**
+         * The two numbers an arithmetic action works on.
+         *
+         * @param a the left operand
+         * @param b the right operand
+         */
+        public record OperandsArgs(@jakarta.validation.constraints.NotNull Integer a,
+                                   @jakarta.validation.constraints.NotNull Integer b) {}
 
-        @com.scivicslab.pojoactor.action.Action("multiply")
-        public ActionResult multiply(String args) { return this.object.callByActionName("multiply", args); }
+        /**
+         * Who to greet.
+         *
+         * @param name the name put into the greeting
+         */
+        public record NameArgs(@jakarta.validation.constraints.NotNull String name) {}
+
+        // MathPlugin dispatches on its own string protocol, so each action rebuilds the
+        // JSON array that protocol expects.
+        private static String operands(OperandsArgs args) {
+            return new org.json.JSONArray()
+                    .put(String.valueOf(args.a())).put(String.valueOf(args.b())).toString();
+        }
+
+        @com.scivicslab.pojoactor.action.Action(value = "add", argsType = OperandsArgs.class)
+        public ActionResult add(OperandsArgs args) { return this.object.callByActionName("add", operands(args)); }
+
+        @com.scivicslab.pojoactor.action.Action(value = "multiply", argsType = OperandsArgs.class)
+        public ActionResult multiply(OperandsArgs args) { return this.object.callByActionName("multiply", operands(args)); }
 
         @com.scivicslab.pojoactor.action.Action("getLastResult")
-        public ActionResult getLastResult(String args) { return this.object.callByActionName("getLastResult", args); }
+        public ActionResult getLastResult(String args) { return this.object.callByActionName("getLastResult", ""); }
 
-        @com.scivicslab.pojoactor.action.Action("greet")
-        public ActionResult greet(String args) { return this.object.callByActionName("greet", args); }
+        @com.scivicslab.pojoactor.action.Action(value = "greet", argsType = NameArgs.class)
+        public ActionResult greet(NameArgs args) { return this.object.callByActionName("greet", args.name()); }
     }
 
     /**
@@ -212,12 +254,13 @@ public class WorkflowInterpreterTest {
         assertEquals(1, row0.getActions().size());
         assertEquals("math", row0.getActions().get(0).getActor());
         assertEquals("add", row0.getActions().get(0).getMethod());
-        // arguments is now a List: ["10", "5"]
+        // arguments is a map naming each operand: {a: 10, b: 5}
         @SuppressWarnings("unchecked")
-        java.util.List<String> args = (java.util.List<String>) row0.getActions().get(0).getArguments();
+        java.util.Map<String, Object> args =
+                (java.util.Map<String, Object>) row0.getActions().get(0).getArguments();
         assertEquals(2, args.size());
-        assertEquals("10", args.get(0));
-        assertEquals("5", args.get(1));
+        assertEquals(10, args.get("a"));
+        assertEquals(5, args.get("b"));
 
         // Check second row
         Transition row1 = code.getSteps().get(1);
@@ -392,21 +435,14 @@ public class WorkflowInterpreterTest {
         assertNotNull(code);
         assertEquals("arguments-list-format-workflow", code.getName());
 
-        // Step 1: 0 -> 1, add ["10", "5"] (result: 15)
-        ActionResult result1 = interpreter.execCode();
-        assertTrue(result1.isSuccess());
-        assertEquals(15, mathPlugin.getLastResult());
+        assertTrue(interpreter.execCode().isSuccess());
+        assertTrue(interpreter.execCode().isSuccess());
+        assertTrue(interpreter.execCode().isSuccess());
 
-        // Step 2: 1 -> 2, multiply ["3", "4"] (result: 12)
-        ActionResult result2 = interpreter.execCode();
-        assertTrue(result2.isSuccess());
-        assertEquals(12, mathPlugin.getLastResult());
-
-        // Step 3: 2 -> end, getLastResult [] (result: 12)
-        ActionResult result3 = interpreter.execCode();
-        assertTrue(result3.isSuccess());
-        assertEquals(12, mathPlugin.getLastResult());
+        assertEquals(java.util.List.of("[\"10\",\"5\"]", "[\"3\",\"4\"]", "[]"), recorded,
+            "a YAML list reaches an action without argsType as a JSON array");
     }
+
 
     /**
      * Example 13: Load YAML workflow with mixed arguments format (string + array).
@@ -427,24 +463,17 @@ public class WorkflowInterpreterTest {
         MatrixCode code = interpreter.getCode();
         assertNotNull(code);
         assertEquals("arguments-mixed-format-workflow", code.getName());
-
-        // Verify workflow loaded correctly with mixed argument formats
         assertEquals(3, code.getSteps().size());
 
-        // Step 1: greet with string format (no array brackets) - action executed but result in state
-        ActionResult result1 = interpreter.execCode();
-        assertTrue(result1.isSuccess());
+        assertTrue(interpreter.execCode().isSuccess());
+        assertTrue(interpreter.execCode().isSuccess());
+        assertTrue(interpreter.execCode().isSuccess());
 
-        // Step 2: add with array format
-        ActionResult result2 = interpreter.execCode();
-        assertTrue(result2.isSuccess());
-        assertEquals(15, mathPlugin.getLastResult());
-
-        // Step 3: getLastResult with empty string
-        ActionResult result3 = interpreter.execCode();
-        assertTrue(result3.isSuccess());
-        assertEquals(15, mathPlugin.getLastResult());
+        assertEquals(java.util.List.of("[\"Alice\"]", "[\"10\",\"5\"]", "[\"\"]"), recorded,
+            "a scalar is wrapped in a one-element JSON array, so an empty string arrives as [\"\"] "
+            + "and not as the [] that an empty list gives");
     }
+
 
     /**
      * Example 14: Verify that omitted arguments and empty array arguments

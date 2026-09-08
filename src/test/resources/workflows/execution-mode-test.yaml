@@ -4,12 +4,16 @@ steps:
     actions:
       - actor: math
         method: add
-        arguments: ["10", "5"]
+        arguments:
+          a: 10
+          b: 5
   - states: ["1", "2"]
     actions:
       - actor: math
         method: multiply
-        arguments: ["3", "4"]
+        arguments:
+          a: 3
+          b: 4
         execution: POOL
   - states: ["2", "end"]
     actions:

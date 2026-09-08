@@ -34,6 +34,8 @@ import org.junit.jupiter.api.Test;
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
 
+import jakarta.validation.constraints.NotNull;
+
 /**
  * Tests for parallel execution and value-based conditional branching.
  *
@@ -67,9 +69,16 @@ public class ParallelExecutionTest {
             this.actorId = actorId;
         }
 
-        @Action("execute")
-        public ActionResult execute(String args) {
-            String entry = actorId + ":" + args;
+        /**
+         * Which task this actor runs.
+         *
+         * @param task the task's name
+         */
+        public record TaskArgs(@NotNull String task) {}
+
+        @Action(value = "execute", argsType = TaskArgs.class)
+        public ActionResult execute(TaskArgs args) {
+            String entry = actorId + ":" + args.task();
             synchronized (executionOrder) {
                 executionOrder.add(entry);
             }
@@ -96,10 +105,16 @@ public class ParallelExecutionTest {
             super(name, null, system);
         }
 
-        @Action("setValue")
-        public ActionResult setValue(String args) {
-            String firstArg = getFirstArg(args);
-            value = Integer.parseInt(firstArg);
+        /**
+         * The number the branch is decided on.
+         *
+         * @param value the number to store
+         */
+        public record ValueArgs(@NotNull Integer value) {}
+
+        @Action(value = "setValue", argsType = ValueArgs.class)
+        public ActionResult setValue(ValueArgs args) {
+            value = args.value();
             return new ActionResult(true, "Value set to: " + value);
         }
 
@@ -210,7 +225,7 @@ public class ParallelExecutionTest {
         com.scivicslab.turingworkflow.workflow.Action a1 = new com.scivicslab.turingworkflow.workflow.Action();
         a1.setActor("decision");
         a1.setMethod("setValue");
-        a1.setArguments("5"); // 5 <= 10 → low
+        a1.setArguments(java.util.Map.of("value", 5)); // 5 <= 10 → low
         step1.setActions(Arrays.asList(a1));
 
         Transition step2 = new Transition();

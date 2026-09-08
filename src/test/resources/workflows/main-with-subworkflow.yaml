@@ -4,9 +4,11 @@ steps:
     actions:
       - actor: coordinator
         method: executeSubWorkflow
-        arguments: "simple-math.yaml"
+        arguments:
+          yaml: "simple-math.yaml"
   - states: ["1", "end"]
     actions:
       - actor: coordinator
         method: executeSubWorkflow
-        arguments: "simple-math.yaml"
+        arguments:
+          yaml: "simple-math.yaml"

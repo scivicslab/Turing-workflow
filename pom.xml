@@ -7,7 +7,7 @@
 
     <groupId>com.scivicslab</groupId>
     <artifactId>turing-workflow</artifactId>
-    <version>4.1.0-SNAPSHOT</version>
+    <version>4.1.0</version>
     <packaging>jar</packaging>
 
     <name>Turing-workflow</name>
@@ -61,7 +61,7 @@
       <dependency>
         <groupId>com.scivicslab</groupId>
         <artifactId>pojo-actor</artifactId>
-        <version>4.0.0</version>
+        <version>4.1.0</version>
       </dependency>
 
       <dependency>
@@ -258,6 +258,32 @@
                     <publishingServerId>central</publishingServerId>
                     <autoPublish>true</autoPublish>
                 </configuration>
+            </plugin>
+
+            <!-- Generate a JSON Schema for every @Action that declares argsType. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <dependencies>
+                    <!-- Optional in this project's own dependencies, so the plugin needs its own copy. -->
+                    <dependency>
+                        <groupId>com.github.victools</groupId>
+                        <artifactId>jsonschema-generator</artifactId>
+                        <version>4.38.0</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>generate-action-schemas</id>
+                        <phase>process-classes</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <includePluginDependencies>true</includePluginDependencies>
+                            <mainClass>com.scivicslab.pojoactor.action.schema.ActionSchemaGenerator</mainClass>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>

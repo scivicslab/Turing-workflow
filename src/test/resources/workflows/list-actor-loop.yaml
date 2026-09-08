@@ -4,28 +4,34 @@ steps:
     actions:
       - actor: list:items
         method: add
-        arguments: "Apple"
+        arguments:
+          value: "Apple"
       - actor: list:items
         method: add
-        arguments: "Banana"
+        arguments:
+          value: "Banana"
       - actor: list:items
         method: add
-        arguments: "Cherry"
+        arguments:
+          value: "Cherry"
   - states: ["1", "loop"]
     actions:
       - actor: calc:i
         method: set
-        arguments: "0"
+        arguments:
+          value: 0
   - states: ["loop", "process"]
     actions:
       - actor: list:items
         method: get
-        arguments: "$(calc:i.get)"
+        arguments:
+          index: "jexl: actors.get('calc:i').get()"
   - states: ["loop", "end"]
     actions:
       - actor: out
         method: print
-        arguments: "All items processed."
+        arguments:
+          message: "All items processed."
   - states: ["process", "loop"]
     actions:
       - actor: calc:count

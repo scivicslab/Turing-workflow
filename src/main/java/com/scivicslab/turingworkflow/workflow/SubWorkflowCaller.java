@@ -19,10 +19,11 @@ package com.scivicslab.turingworkflow.workflow;
 
 import java.io.InputStream;
 
-import org.json.JSONArray;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
+
+import jakarta.validation.constraints.NotNull;
 
 // ThreadLocal depth counter shared across both SubWorkflowCaller implementations
 
@@ -100,27 +101,16 @@ public class SubWorkflowCaller extends IIActorRef<Void> {
      * @param args the YAML filename (plain string or JSON array)
      * @return {@link ActionResult} indicating success or failure
      */
-    @Action("call")
-    public ActionResult call(String args) {
-        return callSubWorkflow(args);
-    }
-
     /**
-     * Extracts the first element from a JSON array string.
-     * If the input is not a JSON array, returns the input as-is.
+     * Which workflow to run as a sub-workflow.
      *
-     * @param args the argument string (may be JSON array or plain string)
-     * @return the first element if JSON array, otherwise the original string
+     * @param yaml the YAML file's name, loaded from {@code /workflows/} on the classpath
      */
-    private String getFirstArg(String args) {
-        if (args == null || args.isEmpty()) {
-            return args;
-        }
-        if (args.startsWith("[")) {
-            JSONArray jsonArray = new JSONArray(args);
-            return jsonArray.length() > 0 ? jsonArray.getString(0) : "";
-        }
-        return args;
+    public record SubWorkflowArgs(@NotNull String yaml) {}
+
+    @Action(value = "call", argsType = SubWorkflowArgs.class)
+    public ActionResult call(SubWorkflowArgs args) {
+        return callSubWorkflow(args.yaml());
     }
 
     /**
@@ -131,11 +121,10 @@ public class SubWorkflowCaller extends IIActorRef<Void> {
      *
      * @param yamlFileName the name of the YAML file (e.g., "sub-workflow.yaml").
      *                     The file is loaded from {@code /workflows/[yamlFileName]}.
-     *                     Can be a JSON array (e.g., {@code ["filename.yaml"]}) or plain string.
      * @return {@link ActionResult} indicating success or failure
      */
     private ActionResult callSubWorkflow(String yamlFileName) {
-        String actualFileName = getFirstArg(yamlFileName);
+        String actualFileName = yamlFileName;
         if (actualFileName == null || actualFileName.trim().isEmpty()) {
             return new ActionResult(false, "YAML filename cannot be null or empty");
         }

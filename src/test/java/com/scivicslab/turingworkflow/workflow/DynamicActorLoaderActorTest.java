@@ -26,6 +26,10 @@ import org.junit.jupiter.api.Test;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
+
+import org.json.JSONArray;
+
+import jakarta.validation.constraints.NotNull;
 import com.scivicslab.turingworkflow.workflow.DynamicActorLoaderActor;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
@@ -163,7 +167,10 @@ public class DynamicActorLoaderActorTest {
                 actions:
                   - actor: loader
                     method: createChild
-                    arguments: ["this", "childActor", "com.scivicslab.turingworkflow.workflow.DynamicActorLoaderActorTest$TestActor"]
+                    arguments:
+                      parent: "jexl: self"
+                      actor: "childActor"
+                      className: "com.scivicslab.turingworkflow.workflow.DynamicActorLoaderActorTest$TestActor"
             """;
 
         interpreter.readYaml(new java.io.ByteArrayInputStream(workflowYaml.getBytes()));
@@ -208,7 +215,10 @@ public class DynamicActorLoaderActorTest {
                 actions:
                   - actor: loader
                     method: createChild
-                    arguments: [".", "childActor2", "com.scivicslab.turingworkflow.workflow.DynamicActorLoaderActorTest$TestActor"]
+                    arguments:
+                      parent: "jexl: self"
+                      actor: "childActor2"
+                      className: "com.scivicslab.turingworkflow.workflow.DynamicActorLoaderActorTest$TestActor"
             """;
 
         interpreter.readYaml(new java.io.ByteArrayInputStream(workflowYaml.getBytes()));
@@ -233,26 +243,82 @@ public class DynamicActorLoaderActorTest {
             super(actorName, object, system);
         }
 
-        @Action("loadJar")
-        public ActionResult loadJar(String args) { return this.object.callByActionName("loadJar", args); }
+        /**
+         * Which JAR to read.
+         *
+         * @param jar the JAR's path, or a Maven coordinate resolved under {@code ~/.m2/repository/}
+         */
+        public record JarArgs(@NotNull String jar) {}
 
-        @Action("createChild")
-        public ActionResult createChild(String args) { return this.object.callByActionName("createChild", args); }
+        /**
+         * Which class to instantiate under which parent, and what to call it.
+         *
+         * @param parent    the parent actor's name
+         * @param actor     the name the new actor is registered under
+         * @param className the fully qualified class name
+         */
+        public record ChildArgs(@NotNull String parent, @NotNull String actor, @NotNull String className) {}
+
+        /**
+         * Which class in which JAR to register as a top-level actor.
+         *
+         * @param jar       the JAR's path
+         * @param className the fully qualified class name
+         * @param actor     the name the new actor is registered under
+         */
+        public record JarActorArgs(@NotNull String jar, @NotNull String className, @NotNull String actor) {}
+
+        /**
+         * Which provider registers its actors.
+         *
+         * @param provider the provider's name
+         */
+        public record ProviderArgs(@NotNull String provider) {}
+
+        // DynamicActorLoaderActor dispatches on its own string protocol, so each action
+        // rebuilds the JSON array that protocol expects.
+        private static String array(String... values) {
+            JSONArray a = new JSONArray();
+            for (String v : values) a.put(v);
+            return a.toString();
+        }
+
+        @Action(value = "loadJar", argsType = JarArgs.class)
+        public ActionResult loadJar(JarArgs args) {
+            return this.object.callByActionName("loadJar", array(args.jar()));
+        }
+
+        @Action(value = "createChild", argsType = ChildArgs.class)
+        public ActionResult createChild(ChildArgs args) {
+            return this.object.callByActionName("createChild",
+                    array(args.parent(), args.actor(), args.className()));
+        }
 
         @Action("listLoadedJars")
-        public ActionResult listLoadedJars(String args) { return this.object.callByActionName("listLoadedJars", args); }
+        public ActionResult listLoadedJars(String args) {
+            return this.object.callByActionName("listLoadedJars", "");
+        }
 
-        @Action("loadFromJar")
-        public ActionResult loadFromJar(String args) { return this.object.callByActionName("loadFromJar", args); }
+        @Action(value = "loadFromJar", argsType = JarActorArgs.class)
+        public ActionResult loadFromJar(JarActorArgs args) {
+            return this.object.callByActionName("loadFromJar",
+                    array(args.jar(), args.className(), args.actor()));
+        }
 
-        @Action("createFromProvider")
-        public ActionResult createFromProvider(String args) { return this.object.callByActionName("createFromProvider", args); }
+        @Action(value = "createFromProvider", argsType = ProviderArgs.class)
+        public ActionResult createFromProvider(ProviderArgs args) {
+            return this.object.callByActionName("createFromProvider", array(args.provider()));
+        }
 
         @Action("listProviders")
-        public ActionResult listProviders(String args) { return this.object.callByActionName("listProviders", args); }
+        public ActionResult listProviders(String args) {
+            return this.object.callByActionName("listProviders", "");
+        }
 
-        @Action("loadProvidersFromJar")
-        public ActionResult loadProvidersFromJar(String args) { return this.object.callByActionName("loadProvidersFromJar", args); }
+        @Action(value = "loadProvidersFromJar", argsType = JarArgs.class)
+        public ActionResult loadProvidersFromJar(JarArgs args) {
+            return this.object.callByActionName("loadProvidersFromJar", array(args.jar()));
+        }
     }
 
     /**

@@ -39,10 +39,10 @@ import org.json.JSONArray;
  *   <li>{@code escapeJsonStored} — JSON-escape the stored string in-place</li>
  * </ul>
  */
-public class StringActor extends IIActorRef<String[]> {
+public class StringActor extends IIActorRef<TextSlot> {
 
     public StringActor(String name, IIActorSystem system) {
-        super(name, new String[]{""}, system);
+        super(name, new TextSlot(), system);
     }
 
     @Override
@@ -70,53 +70,53 @@ public class StringActor extends IIActorRef<String[]> {
     }
 
     private ActionResult set(String value) {
-        object[0] = value == null ? "" : value;
-        return new ActionResult(true, object[0]);
+        object.set(value);
+        return new ActionResult(true, object.get());
     }
 
     private ActionResult get() {
-        return new ActionResult(true, object[0]);
+        return new ActionResult(true, object.get());
     }
 
     private ActionResult clear() {
-        object[0] = "";
+        object.clear();
         return new ActionResult(true, "");
     }
 
     private ActionResult append(String value) {
-        object[0] = object[0] + (value == null ? "" : value);
-        return new ActionResult(true, object[0]);
+        object.append(value);
+        return new ActionResult(true, object.get());
     }
 
     private ActionResult length() {
-        return new ActionResult(true, String.valueOf(object[0].length()));
+        return new ActionResult(true, String.valueOf(object.length()));
     }
 
     private ActionResult trim() {
-        object[0] = object[0].trim();
-        return new ActionResult(true, object[0]);
+        object.trim();
+        return new ActionResult(true, object.get());
     }
 
     private ActionResult toUpperCase() {
-        object[0] = object[0].toUpperCase();
-        return new ActionResult(true, object[0]);
+        object.toUpperCase();
+        return new ActionResult(true, object.get());
     }
 
     private ActionResult toLowerCase() {
-        object[0] = object[0].toLowerCase();
-        return new ActionResult(true, object[0]);
+        object.toLowerCase();
+        return new ActionResult(true, object.get());
     }
 
     private ActionResult contains(String value) {
-        return new ActionResult(true, String.valueOf(object[0].contains(value == null ? "" : value)));
+        return new ActionResult(true, String.valueOf(object.contains(value)));
     }
 
     private ActionResult startsWith(String prefix) {
-        return new ActionResult(true, String.valueOf(object[0].startsWith(prefix == null ? "" : prefix)));
+        return new ActionResult(true, String.valueOf(object.startsWith(prefix)));
     }
 
     private ActionResult endsWith(String suffix) {
-        return new ActionResult(true, String.valueOf(object[0].endsWith(suffix == null ? "" : suffix)));
+        return new ActionResult(true, String.valueOf(object.endsWith(suffix)));
     }
 
     private ActionResult replace(String args) {
@@ -124,8 +124,8 @@ public class StringActor extends IIActorRef<String[]> {
             JSONArray arr = new JSONArray(args);
             String target = arr.getString(0);
             String replacement = arr.getString(1);
-            object[0] = object[0].replace(target, replacement);
-            return new ActionResult(true, object[0]);
+            object.replace(target, replacement);
+            return new ActionResult(true, object.get());
         } catch (Exception e) {
             return new ActionResult(false, "str.replace: expected [target, replacement]: " + e.getMessage());
         }
@@ -137,49 +137,26 @@ public class StringActor extends IIActorRef<String[]> {
             int start = arr.getInt(0);
             if (arr.length() >= 2) {
                 int end = arr.getInt(1);
-                return new ActionResult(true, object[0].substring(start, end));
+                return new ActionResult(true, object.substring(start, end));
             }
-            return new ActionResult(true, object[0].substring(start));
+            return new ActionResult(true, object.substring(start));
         } catch (Exception e) {
             return new ActionResult(false, "str.substring: expected [start] or [start, end]: " + e.getMessage());
         }
     }
 
     private ActionResult isEmpty() {
-        return new ActionResult(true, String.valueOf(object[0].isEmpty()));
+        return new ActionResult(true, String.valueOf(object.isEmpty()));
     }
 
     private ActionResult escapeJson(String value) {
         if (value == null) value = "";
-        return new ActionResult(true, escapeForJson(value));
+        return new ActionResult(true, TextSlot.escapeForJson(value));
     }
 
     private ActionResult escapeJsonStored() {
-        object[0] = escapeForJson(object[0]);
-        return new ActionResult(true, object[0]);
+        object.escapeJson();
+        return new ActionResult(true, object.get());
     }
 
-    private static String escapeForJson(String s) {
-        StringBuilder sb = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '"'  -> sb.append("\\\"");
-                case '\\' -> sb.append("\\\\");
-                case '\n' -> sb.append("\\n");
-                case '\r' -> sb.append("\\r");
-                case '\t' -> sb.append("\\t");
-                case '\b' -> sb.append("\\b");
-                case '\f' -> sb.append("\\f");
-                default -> {
-                    if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
-                    }
-                }
-            }
-        }
-        return sb.toString();
-    }
 }

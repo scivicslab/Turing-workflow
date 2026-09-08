@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test;
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
 
+import jakarta.validation.constraints.NotNull;
+
 /**
  * Tests for @Action annotation on IIActorRef subclass.
  *
@@ -107,21 +109,23 @@ public class ActionAnnotationTest {
             super(name, calculator);
         }
 
-        @Action("add")
-        public ActionResult add(String args) {
-            String[] parts = args.replace("[", "").replace("]", "").replace("\"", "").split(",");
-            int a = Integer.parseInt(parts[0].trim());
-            int b = Integer.parseInt(parts[1].trim());
-            int result = this.object.add(a, b);
+        /**
+         * The two numbers an arithmetic action works on.
+         *
+         * @param a the left operand
+         * @param b the right operand
+         */
+        public record OperandsArgs(@NotNull Integer a, @NotNull Integer b) {}
+
+        @Action(value = "add", argsType = OperandsArgs.class)
+        public ActionResult add(OperandsArgs args) {
+            int result = this.object.add(args.a(), args.b());
             return new ActionResult(true, String.valueOf(result));
         }
 
-        @Action("multiply")
-        public ActionResult multiply(String args) {
-            String[] parts = args.replace("[", "").replace("]", "").replace("\"", "").split(",");
-            int a = Integer.parseInt(parts[0].trim());
-            int b = Integer.parseInt(parts[1].trim());
-            int result = this.object.multiply(a, b);
+        @Action(value = "multiply", argsType = OperandsArgs.class)
+        public ActionResult multiply(OperandsArgs args) {
+            int result = this.object.multiply(args.a(), args.b());
             return new ActionResult(true, String.valueOf(result));
         }
 
@@ -239,7 +243,7 @@ public class ActionAnnotationTest {
             Calculator calc = new Calculator();
             CalculatorIIAR actorRef = new CalculatorIIAR("calc", calc);
 
-            ActionResult result = actorRef.callByActionName("add", "[5, 3]");
+            ActionResult result = actorRef.callByActionName("add", "{\"a\":5,\"b\":3}");
 
             assertTrue(result.isSuccess());
             assertEquals("8", result.getResult());
@@ -251,8 +255,8 @@ public class ActionAnnotationTest {
             Calculator calc = new Calculator();
             CalculatorIIAR actorRef = new CalculatorIIAR("calc", calc);
 
-            ActionResult addResult = actorRef.callByActionName("add", "[10, 5]");
-            ActionResult multiplyResult = actorRef.callByActionName("multiply", "[4, 7]");
+            ActionResult addResult = actorRef.callByActionName("add", "{\"a\":10,\"b\":5}");
+            ActionResult multiplyResult = actorRef.callByActionName("multiply", "{\"a\":4,\"b\":7}");
 
             assertTrue(addResult.isSuccess());
             assertEquals("15", addResult.getResult());
@@ -267,7 +271,7 @@ public class ActionAnnotationTest {
             Calculator calc = new Calculator();
             CalculatorIIAR actorRef = new CalculatorIIAR("calc", calc);
 
-            actorRef.callByActionName("add", "[100, 50]");
+            actorRef.callByActionName("add", "{\"a\":100,\"b\":50}");
             ActionResult lastResult = actorRef.callByActionName("getLastResult", "");
 
             assertEquals("150", lastResult.getResult());
@@ -425,7 +429,7 @@ public class ActionAnnotationTest {
             CalculatorIIAR actorRef = new CalculatorIIAR("calc", calc);
 
             // Custom @Action should work
-            ActionResult addResult = actorRef.callByActionName("add", "[1, 2]");
+            ActionResult addResult = actorRef.callByActionName("add", "{\"a\":1,\"b\":2}");
             assertTrue(addResult.isSuccess());
             assertEquals("3", addResult.getResult());
 
@@ -447,7 +451,7 @@ public class ActionAnnotationTest {
             CalculatorIIAR actorRef = new CalculatorIIAR("calc", calc);
 
             // First verify @Action works
-            ActionResult customResult = actorRef.callByActionName("add", "[5, 5]");
+            ActionResult customResult = actorRef.callByActionName("add", "{\"a\":5,\"b\":5}");
             assertTrue(customResult.isSuccess());
 
             // Then verify built-in action works
@@ -471,17 +475,17 @@ public class ActionAnnotationTest {
             CalculatorIIAR actorRef = new CalculatorIIAR("calc", calc);
 
             // First call triggers discovery
-            ActionResult result1 = actorRef.callByActionName("add", "[1, 1]");
+            ActionResult result1 = actorRef.callByActionName("add", "{\"a\":1,\"b\":1}");
             assertEquals("2", result1.getResult());
 
             // Subsequent calls use cache
-            ActionResult result2 = actorRef.callByActionName("add", "[2, 2]");
+            ActionResult result2 = actorRef.callByActionName("add", "{\"a\":2,\"b\":2}");
             assertEquals("4", result2.getResult());
 
-            ActionResult result3 = actorRef.callByActionName("multiply", "[3, 3]");
+            ActionResult result3 = actorRef.callByActionName("multiply", "{\"a\":3,\"b\":3}");
             assertEquals("9", result3.getResult());
 
-            ActionResult result4 = actorRef.callByActionName("add", "[100, 200]");
+            ActionResult result4 = actorRef.callByActionName("add", "{\"a\":100,\"b\":200}");
             assertEquals("300", result4.getResult());
 
             assertTrue(result1.isSuccess());
@@ -498,8 +502,8 @@ public class ActionAnnotationTest {
             CalculatorIIAR actor1 = new CalculatorIIAR("calc1", calc1);
             CalculatorIIAR actor2 = new CalculatorIIAR("calc2", calc2);
 
-            actor1.callByActionName("add", "[10, 20]");
-            actor2.callByActionName("add", "[100, 200]");
+            actor1.callByActionName("add", "{\"a\":10,\"b\":20}");
+            actor2.callByActionName("add", "{\"a\":100,\"b\":200}");
 
             assertEquals(30, calc1.getLastResult());
             assertEquals(300, calc2.getLastResult());
@@ -536,10 +540,12 @@ public class ActionAnnotationTest {
         @DisplayName("IIActorRef subclass should have @Action annotations")
         void iiActorRefSubclassShouldHaveActionAnnotations() throws NoSuchMethodException {
             // Verify CalculatorIIAR.add has @Action annotation
-            var method = CalculatorIIAR.class.getMethod("add", String.class);
+            var method = CalculatorIIAR.class.getMethod("add", CalculatorIIAR.OperandsArgs.class);
             Action action = method.getAnnotation(Action.class);
             assertNotNull(action, "IIActorRef subclass should have @Action annotation");
             assertEquals("add", action.value());
+            assertEquals(CalculatorIIAR.OperandsArgs.class, action.argsType(),
+                "the declared argument type is what callers are told to send");
         }
     }
 }

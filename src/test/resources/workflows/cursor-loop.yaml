@@ -4,7 +4,8 @@ steps:
     actions:
       - actor: calc:count
         method: set
-        arguments: "0"
+        arguments:
+          value: 0
   - states: ["loop", "process"]
     actions:
       - actor: cursorActor
@@ -13,7 +14,8 @@ steps:
     actions:
       - actor: out
         method: print
-        arguments: "All items processed."
+        arguments:
+          message: "All items processed."
   - states: ["process", "loop"]
     actions:
       - actor: calc:count

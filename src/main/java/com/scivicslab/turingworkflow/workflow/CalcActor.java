@@ -12,6 +12,8 @@ package com.scivicslab.turingworkflow.workflow;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
+
+import jakarta.validation.constraints.NotNull;
 import org.apache.commons.jexl3.*;
 
 /**
@@ -31,140 +33,129 @@ import org.apache.commons.jexl3.*;
  *   <li>{@code eval} — evaluate JEXL expression; {@code v} = current value</li>
  * </ul>
  */
-public class CalcActor extends IIActorRef<double[]> {
-
-    private static final JexlEngine JEXL = new JexlBuilder().silent(false).strict(true).create();
+public class CalcActor extends IIActorRef<Accumulator> {
 
     public CalcActor(String name, IIActorSystem system) {
-        super(name, new double[]{0.0}, system);
+        super(name, new Accumulator(), system);
     }
 
-    @Action("set")
-    public ActionResult set(String args) {
-        String arg = parseFirstArgument(args);
-        try {
-            object[0] = Double.parseDouble(arg.trim());
-            return new ActionResult(true, format(object[0]));
-        } catch (NumberFormatException e) {
-            return new ActionResult(false, "calc.set: invalid number: " + arg);
-        }
+    /**
+     * A number to store as the accumulator's value.
+     *
+     * <p>A workflow that needs the number from elsewhere writes it as an expression —
+     * {@code value: "jexl: actors.get('calc:other').get()"} — which arrives as a number.</p>
+     *
+     * @param value the number to store
+     */
+    public record ValueArgs(@NotNull Double value) {}
+
+    /**
+     * The other number in an arithmetic or comparison action.
+     *
+     * @param operand the number the accumulator is combined with or compared against
+     */
+    public record OperandArgs(@NotNull Double operand) {}
+
+    /**
+     * An arithmetic expression to evaluate.
+     *
+     * @param expression the expression, in the syntax the JEXL engine accepts
+     */
+    public record ExpressionArgs(@NotNull String expression) {}
+
+    @Action(value = "set", argsType = ValueArgs.class)
+    public ActionResult set(ValueArgs args) {
+        object.set(args.value());
+        return new ActionResult(true, object.toString());
     }
 
     @Action("get")
     public ActionResult get(String args) {
-        return new ActionResult(true, format(object[0]));
+        return new ActionResult(true, object.toString());
     }
 
     @Action("inc")
     public ActionResult inc(String args) {
-        return new ActionResult(true, format(++object[0]));
+        return new ActionResult(true, fmt(object.increment()));
     }
 
     @Action("dec")
     public ActionResult dec(String args) {
-        return new ActionResult(true, format(--object[0]));
+        return new ActionResult(true, fmt(object.decrement()));
     }
 
-    @Action("add")
-    public ActionResult add(String args) {
-        return arithmetic(parseFirstArgument(args), '+');
+    @Action(value = "add", argsType = OperandArgs.class)
+    public ActionResult add(OperandArgs args) {
+        return arithmetic(args.operand(), '+');
     }
 
-    @Action("sub")
-    public ActionResult sub(String args) {
-        return arithmetic(parseFirstArgument(args), '-');
+    @Action(value = "sub", argsType = OperandArgs.class)
+    public ActionResult sub(OperandArgs args) {
+        return arithmetic(args.operand(), '-');
     }
 
-    @Action("mul")
-    public ActionResult mul(String args) {
-        return arithmetic(parseFirstArgument(args), '*');
+    @Action(value = "mul", argsType = OperandArgs.class)
+    public ActionResult mul(OperandArgs args) {
+        return arithmetic(args.operand(), '*');
     }
 
-    @Action("div")
-    public ActionResult div(String args) {
-        return arithmetic(parseFirstArgument(args), '/');
+    @Action(value = "div", argsType = OperandArgs.class)
+    public ActionResult div(OperandArgs args) {
+        return arithmetic(args.operand(), '/');
     }
 
-    @Action("mod")
-    public ActionResult mod(String args) {
-        return arithmetic(parseFirstArgument(args), '%');
+    @Action(value = "mod", argsType = OperandArgs.class)
+    public ActionResult mod(OperandArgs args) {
+        return arithmetic(args.operand(), '%');
     }
 
     @Action("reset")
     public ActionResult reset(String args) {
-        object[0] = 0.0;
+        object.reset();
         return new ActionResult(true, "0");
     }
 
-    @Action("eval")
-    public ActionResult eval(String args) {
-        String expression = parseFirstArgument(args);
+    @Action(value = "eval", argsType = ExpressionArgs.class)
+    public ActionResult eval(ExpressionArgs args) {
         try {
-            JexlContext ctx = new MapContext();
-            ctx.set("v", object[0]);
-            Object result = JEXL.createExpression(expression).evaluate(ctx);
-            if (result instanceof Number n) {
-                object[0] = n.doubleValue();
-                return new ActionResult(true, format(object[0]));
-            }
-            return new ActionResult(true, String.valueOf(result));
+            object.evaluate(args.expression());
+            return new ActionResult(true, object.toString());
         } catch (Exception e) {
             return new ActionResult(false, "calc.eval: " + e.getMessage());
         }
     }
 
     /** Returns success=true if value &lt; arg; success=false otherwise. */
-    @Action("lt")
-    public ActionResult lt(String args) { return compare(parseFirstArgument(args), '<'); }
+    @Action(value = "lt", argsType = OperandArgs.class)
+    public ActionResult lt(OperandArgs args) { return compare(args.operand(), '<'); }
 
     /** Returns success=true if value &lt;= arg; success=false otherwise. */
-    @Action("lte")
-    public ActionResult lte(String args) { return compare(parseFirstArgument(args), 'L'); }
+    @Action(value = "lte", argsType = OperandArgs.class)
+    public ActionResult lte(OperandArgs args) { return compare(args.operand(), 'L'); }
 
     /** Returns success=true if value &gt; arg; success=false otherwise. */
-    @Action("gt")
-    public ActionResult gt(String args) { return compare(parseFirstArgument(args), '>'); }
+    @Action(value = "gt", argsType = OperandArgs.class)
+    public ActionResult gt(OperandArgs args) { return compare(args.operand(), '>'); }
 
     /** Returns success=true if value &gt;= arg; success=false otherwise. */
-    @Action("gte")
-    public ActionResult gte(String args) { return compare(parseFirstArgument(args), 'G'); }
+    @Action(value = "gte", argsType = OperandArgs.class)
+    public ActionResult gte(OperandArgs args) { return compare(args.operand(), 'G'); }
 
     /** Returns success=true if value == arg; success=false otherwise. */
-    @Action("eq")
-    public ActionResult eq(String args) { return compare(parseFirstArgument(args), '='); }
+    @Action(value = "eq", argsType = OperandArgs.class)
+    public ActionResult eq(OperandArgs args) { return compare(args.operand(), '='); }
 
-    private ActionResult compare(String arg, char op) {
-        try {
-            double n = Double.parseDouble(arg.trim());
-            boolean result = switch (op) {
-                case '<' -> object[0] <  n;
-                case 'L' -> object[0] <= n;
-                case '>' -> object[0] >  n;
-                case 'G' -> object[0] >= n;
-                case '=' -> object[0] == n;
-                default  -> false;
-            };
-            return new ActionResult(result, format(object[0]));
-        } catch (NumberFormatException e) {
-            return new ActionResult(false, "calc.compare: invalid number: " + arg);
-        }
+    private ActionResult compare(double operand, char op) {
+        return new ActionResult(object.compare(operand, op), object.toString());
     }
 
-    private ActionResult arithmetic(String arg, char op) {
-        try {
-            double n = Double.parseDouble(arg.trim());
-            object[0] = switch (op) {
-                case '+' -> object[0] + n;
-                case '-' -> object[0] - n;
-                case '*' -> object[0] * n;
-                case '/' -> object[0] / n;
-                case '%' -> object[0] % n;
-                default  -> object[0];
-            };
-            return new ActionResult(true, format(object[0]));
-        } catch (NumberFormatException e) {
-            return new ActionResult(false, "calc." + op + ": invalid number: " + arg);
-        }
+    private ActionResult arithmetic(double operand, char op) {
+        object.apply(operand, op);
+        return new ActionResult(true, object.toString());
+    }
+
+    private static String fmt(double v) {
+        return format(v);
     }
 
     private static String format(double v) {

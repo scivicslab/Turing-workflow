@@ -98,7 +98,7 @@ public class SchedulerIIARTest {
         }
 
         @Action("increment")
-        public ActionResult increment(String args) { return this.object.callByActionName("increment", args); }
+        public ActionResult increment(String args) { return this.object.callByActionName("increment", ""); }
     }
 
     /**

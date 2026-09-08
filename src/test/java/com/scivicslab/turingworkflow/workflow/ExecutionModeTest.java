@@ -72,28 +72,51 @@ public class ExecutionModeTest {
             super(actorName, object, system);
         }
 
-        @com.scivicslab.pojoactor.action.Action("add")
-        public ActionResult add(String args) {
-            lastExecutionThread.set(Thread.currentThread().getName());
-            return this.object.callByActionName("add", args);
+        /**
+         * The two numbers an arithmetic action works on.
+         *
+         * @param a the left operand
+         * @param b the right operand
+         */
+        public record OperandsArgs(@jakarta.validation.constraints.NotNull Integer a,
+                                   @jakarta.validation.constraints.NotNull Integer b) {}
+
+        /**
+         * Who to greet.
+         *
+         * @param name the name put into the greeting
+         */
+        public record NameArgs(@jakarta.validation.constraints.NotNull String name) {}
+
+        // MathPlugin dispatches on its own string protocol, so each action rebuilds the
+        // JSON array that protocol expects.
+        private static String operands(OperandsArgs args) {
+            return new org.json.JSONArray()
+                    .put(String.valueOf(args.a())).put(String.valueOf(args.b())).toString();
         }
 
-        @com.scivicslab.pojoactor.action.Action("multiply")
-        public ActionResult multiply(String args) {
+        @com.scivicslab.pojoactor.action.Action(value = "add", argsType = OperandsArgs.class)
+        public ActionResult add(OperandsArgs args) {
             lastExecutionThread.set(Thread.currentThread().getName());
-            return this.object.callByActionName("multiply", args);
+            return this.object.callByActionName("add", operands(args));
+        }
+
+        @com.scivicslab.pojoactor.action.Action(value = "multiply", argsType = OperandsArgs.class)
+        public ActionResult multiply(OperandsArgs args) {
+            lastExecutionThread.set(Thread.currentThread().getName());
+            return this.object.callByActionName("multiply", operands(args));
         }
 
         @com.scivicslab.pojoactor.action.Action("getLastResult")
         public ActionResult getLastResult(String args) {
             lastExecutionThread.set(Thread.currentThread().getName());
-            return this.object.callByActionName("getLastResult", args);
+            return this.object.callByActionName("getLastResult", "");
         }
 
-        @com.scivicslab.pojoactor.action.Action("greet")
-        public ActionResult greet(String args) {
+        @com.scivicslab.pojoactor.action.Action(value = "greet", argsType = NameArgs.class)
+        public ActionResult greet(NameArgs args) {
             lastExecutionThread.set(Thread.currentThread().getName());
-            return this.object.callByActionName("greet", args);
+            return this.object.callByActionName("greet", args.name());
         }
 
         public String getLastExecutionThread() {
@@ -211,7 +234,7 @@ public class ExecutionModeTest {
         Transition row = new Transition();
         row.setStates(Arrays.asList("0", "end"));
 
-        Action action = new Action("math", "add", Arrays.asList("1", "2"));
+        Action action = new Action("math", "add", java.util.Map.of("a", 1, "b", 2));
         action.setExecution(ExecutionMode.POOL);
         row.setActions(Arrays.asList(action));
 
@@ -246,7 +269,7 @@ public class ExecutionModeTest {
         Transition row = new Transition();
         row.setStates(Arrays.asList("0", "end"));
 
-        Action action = new Action("math", "add", Arrays.asList("1", "2"));
+        Action action = new Action("math", "add", java.util.Map.of("a", 1, "b", 2));
         action.setExecution(ExecutionMode.DIRECT);
         row.setActions(Arrays.asList(action));
 

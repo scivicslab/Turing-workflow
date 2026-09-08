@@ -4,7 +4,8 @@ steps:
     actions:
       - actor: decision
         method: setValue
-        arguments: "15"
+        arguments:
+          value: 15
   - states: ["1", "2"]
     actions:
       - actor: decision

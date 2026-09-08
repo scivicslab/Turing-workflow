@@ -119,7 +119,7 @@ public class LoopPatternTest {
         @Action("phase1")
         public ActionResult phase1(String args) {
             synchronized (stateHistory) {
-                stateHistory.add("phase1:" + args);
+                stateHistory.add("phase1");
             }
             return new ActionResult(true, "Executed: phase1");
         }
@@ -127,7 +127,7 @@ public class LoopPatternTest {
         @Action("phase2")
         public ActionResult phase2(String args) {
             synchronized (stateHistory) {
-                stateHistory.add("phase2:" + args);
+                stateHistory.add("phase2");
             }
             return new ActionResult(true, "Executed: phase2");
         }
@@ -135,7 +135,7 @@ public class LoopPatternTest {
         @Action("phase3")
         public ActionResult phase3(String args) {
             synchronized (stateHistory) {
-                stateHistory.add("phase3:" + args);
+                stateHistory.add("phase3");
             }
             return new ActionResult(true, "Executed: phase3");
         }
@@ -143,7 +143,7 @@ public class LoopPatternTest {
         @Action("checkContinue")
         public ActionResult checkContinue(String args) {
             synchronized (stateHistory) {
-                stateHistory.add("checkContinue:" + args);
+                stateHistory.add("checkContinue");
             }
             int cycles = cycleCount.incrementAndGet();
             boolean shouldContinue = cycles < 3;
@@ -153,7 +153,7 @@ public class LoopPatternTest {
         @Action("finalize")
         public ActionResult finalize(String args) {
             synchronized (stateHistory) {
-                stateHistory.add("finalize:" + args);
+                stateHistory.add("finalize");
             }
             return new ActionResult(true, "Executed: finalize");
         }

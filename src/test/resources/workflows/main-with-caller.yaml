@@ -4,9 +4,11 @@ steps:
     actions:
       - actor: caller
         method: call
-        arguments: "simple-math.yaml"
+        arguments:
+          yaml: "simple-math.yaml"
   - states: ["1", "end"]
     actions:
       - actor: caller
         method: call
-        arguments: "simple-math.yaml"
+        arguments:
+          yaml: "simple-math.yaml"

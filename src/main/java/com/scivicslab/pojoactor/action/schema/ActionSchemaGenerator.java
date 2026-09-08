@@ -107,6 +107,14 @@ public final class ActionSchemaGenerator {
     public static void main(String[] args) throws IOException {
         Path classesDir = Path.of(args.length > 0 ? args[0] : "target/classes");
         Path outputDir = Path.of(args.length > 1 ? args[1] : "target/classes/action-schemas");
+        if (!Files.isDirectory(classesDir)) {
+            // A module that compiles no classes of its own — an aggregator pom, for one — has
+            // nothing to scan. Say which directory was missing so that a module which merely
+            // failed to compile is not mistaken for one that has no actions.
+            System.out.println("ActionSchemaGenerator: no compiled classes at " + classesDir
+                    + "; nothing to scan");
+            return;
+        }
         int count = generate(classesDir, outputDir);
         System.out.println("ActionSchemaGenerator: wrote " + count + " schema(s) to " + outputDir);
     }

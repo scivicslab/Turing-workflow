@@ -4,9 +4,13 @@ steps:
     actions:
       - actor: math
         method: add
-        arguments: ["5", "3"]
+        arguments:
+          a: 5
+          b: 3
       - actor: math
         method: multiply
-        arguments: ["2", "4"]
+        arguments:
+          a: 2
+          b: 4
       - actor: math
         method: getLastResult

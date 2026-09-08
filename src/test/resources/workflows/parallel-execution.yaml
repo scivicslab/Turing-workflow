@@ -4,15 +4,19 @@ steps:
     actions:
       - actor: actor1
         method: execute
-        arguments: "task1"
+        arguments:
+          task: "task1"
       - actor: actor2
         method: execute
-        arguments: "task2"
+        arguments:
+          task: "task2"
       - actor: actor3
         method: execute
-        arguments: "task3"
+        arguments:
+          task: "task3"
   - states: ["1", "end"]
     actions:
       - actor: actor1
         method: execute
-        arguments: "finalize"
+        arguments:
+          task: "finalize"

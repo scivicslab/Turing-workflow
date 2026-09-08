@@ -8,4 +8,5 @@ steps:
     actions:
       - actor: out
         method: print
-        arguments: "Loop finished."
+        arguments:
+          message: "Loop finished."

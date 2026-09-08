@@ -29,6 +29,7 @@ import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -71,6 +72,12 @@ public class ActionDispatcher {
 
     private static final Logger logger = Logger.getLogger(ActionDispatcher.class.getName());
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
+
+    /**
+     * Action keys already reported as having no schema, so the report is made once per action
+     * rather than once per call.
+     */
+    private static final Set<String> UNSCHEMED_REPORTED = ConcurrentHashMap.newKeySet();
 
     // Lazy holder (initialization-on-demand holder idiom): com.networknt:json-schema-validator
     // is an <optional> dependency of POJO-actor. ActionDispatcher is loaded by every @Action
@@ -216,6 +223,28 @@ public class ActionDispatcher {
     }
 
     /**
+     * Records, once per action, that an {@code argsType} action is dispatching unvalidated.
+     *
+     * <p>Declaring {@code argsType} asks for the arguments to be checked against a generated
+     * schema. Reaching here means the registry holds no schema for this action, so the check is
+     * skipped and the call proceeds. Without this message the skip is indistinguishable from a
+     * successful check, because both leave {@code validateAgainstSchema} returning {@code null}.</p>
+     *
+     * <p>Two situations produce it. The build did not run {@code ActionSchemaGenerator}, so no
+     * schema file was ever written. Or the class arrived from a jar the registry has not read —
+     * see {@code ActionSchemaRegistry.addFrom}.</p>
+     *
+     * @param actionName the action being dispatched
+     */
+    private void reportMissingSchema(String actionName) {
+        String key = target.getClass().getName() + "." + actionName;
+        if (UNSCHEMED_REPORTED.add(key)) {
+            logger.warning("No schema registered for " + key
+                    + "; its argsType arguments are dispatched without validation");
+        }
+    }
+
+    /**
      * Validates {@code args} against the schema registered for {@code target}'s class and
      * {@code actionName}, if any.
      *
@@ -226,6 +255,7 @@ public class ActionDispatcher {
     private ActionResult validateAgainstSchema(String actionName, String args) {
         JsonNode schemaNode = schemaRegistry.schemaFor(target.getClass(), actionName);
         if (schemaNode == null) {
+            reportMissingSchema(actionName);
             return null;
         }
 
