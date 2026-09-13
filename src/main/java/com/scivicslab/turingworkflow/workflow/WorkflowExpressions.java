@@ -46,6 +46,8 @@ import org.apache.commons.jexl3.introspection.JexlPermissions;
  * result                                     // what the previous action answered
  * state.get("dir")                           // a value this actor stored
  * state.getInt("chunk.size", 0)              // the same, read as a whole number
+ * state.select("items").size()               // how long a list in that state is
+ * state.select("items").get(0).asText()      // one item of it
  * self                                       // this actor's own registered name
  * currentState                               // the state the workflow is in
  * }</pre>
@@ -62,15 +64,36 @@ public final class WorkflowExpressions {
      * and nothing says why. Composing onto {@code RESTRICTED} rather than using
      * {@code UNRESTRICTED} keeps JEXL's own refusals in place — {@code java.lang.System} stays out
      * of reach.</p>
+     *
+     * <p>Jackson's databind is in the set because it is what {@code state} is made of:
+     * {@code state.select("items")} answers a {@code JsonNode}, and with that class refused every
+     * call on the answer came back {@code null} — or worse, {@code size()} answered {@code 1},
+     * JEXL's size of one opaque object, so a loop over a three-item list ran once. Reading a list
+     * out of the workflow's own state is the ordinary thing to do with it
+     * ({@code ActorsAsVariables_260914_oo01}), so the type that list arrives as has to be
+     * callable.</p>
      */
     private static final String[] PERMITTED_PACKAGES = {
         "com.scivicslab.turingworkflow.workflow.*",
         "com.scivicslab.pojoactor.*",
+        "com.fasterxml.jackson.databind.*",
+        "com.fasterxml.jackson.databind.node.*",
     };
 
+    /**
+     * The evaluator for an action's argument expressions.
+     *
+     * <p>{@code safe(false)} because JEXL navigates safely by default: a method the object does
+     * not have answers {@code null} without raising, and so does a call on {@code null}. The
+     * argument then reaches the action as JSON null and the action runs on it — a workflow calling
+     * {@code inc()} where the object has {@code increment()} printed "null" and reported success,
+     * with nothing in the log. Raising is caught where the argument is built, which logs the
+     * expression and passes null, so the same run now says which expression went wrong.</p>
+     */
     private static final JexlEngine JEXL = new JexlBuilder()
             .silent(false)
             .strict(true)
+            .safe(false)
             .permissions(JexlPermissions.RESTRICTED.compose(PERMITTED_PACKAGES))
             .create();
 

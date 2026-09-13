@@ -1,0 +1,21 @@
+name: broken-argument-expression
+description: |
+  An argument expression that cannot be evaluated: the workflow's own state has no such method.
+  The transition must fail there rather than handing the action a null.
+
+steps:
+  - states: ["0", "1"]
+    label: call-a-method-that-is-not-there
+    actions:
+      - actor: this
+        method: putJson
+        arguments:
+          path: taken
+          value: "jexl: state.noSuchMethod()"
+
+  - states: ["0", "end"]
+    label: the-way-out
+    actions:
+      - actor: this
+        method: putJson
+        arguments: {path: fellThrough, value: true}

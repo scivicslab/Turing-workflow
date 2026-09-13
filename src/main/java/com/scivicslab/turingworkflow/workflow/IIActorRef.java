@@ -191,8 +191,8 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
      *   <li><strong>@Action annotation:</strong> Checks the IIActorRef subclass for methods
      *       annotated with {@link Action} matching the action name. This keeps the POJO
      *       clean - only the IIActorRef adapter needs workflow-related code.</li>
-     *   <li><strong>Built-in JSON State API:</strong> Handles putJson, getJson, hasJson,
-     *       clearJson, and printJson actions.</li>
+     *   <li><strong>Built-in JSON State API:</strong> Handles putJson, appendJson, getJson,
+     *       hasJson, clearJson, and printJson actions.</li>
      *   <li><strong>Unknown action:</strong> Returns failure for unrecognized actions.</li>
      * </ol>
      *
@@ -242,6 +242,7 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
         // Stage 2: Built-in JSON State API actions
         return switch (actionName) {
             case "putJson" -> handlePutJson(args);
+            case "appendJson" -> handleAppendJson(args);
             case "getJson" -> handleGetJson(args);
             case "hasJson" -> handleHasJson(args);
             case "clearJson" -> handleClearJson();
@@ -258,12 +259,58 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
         try {
             JSONObject json = new JSONObject(args);
             String path = json.getString("path");
-            Object value = json.get("value");
+            Object value = valueOf(json.get("value"));
             putJson(path, value);
             return new ActionResult(true, "Stored " + path + "=" + value);
         } catch (Exception e) {
             return new ActionResult(false, "putJson error: " + e.getMessage());
         }
+    }
+
+    /**
+     * Handles appendJson action: adds one value to the end of the list at a path.
+     * Expected args: {"path": "key.path", "value": &lt;any&gt;}
+     *
+     * <p>The one list operation {@code putJson} cannot do. {@code putJson} writes the index it is
+     * given ({@code items[2]}), and a workflow cannot compute that index into the path, so adding
+     * to the end needed an action of its own ({@code ActorsAsVariables_260914_oo01}).</p>
+     *
+     * <p>A path holding nothing becomes a list of one. A path holding anything that is not a list
+     * is refused rather than overwritten.</p>
+     */
+    private ActionResult handleAppendJson(String args) {
+        try {
+            JSONObject json = new JSONObject(args);
+            String path = json.getString("path");
+            Object value = valueOf(json.get("value"));
+            com.fasterxml.jackson.databind.JsonNode at = json().select(path);
+            if (!at.isMissingNode() && !at.isNull() && !at.isArray()) {
+                return new ActionResult(false,
+                        "appendJson refused: '" + path + "' holds " + at.getNodeType()
+                                + ", not a list");
+            }
+            int end = at.isArray() ? at.size() : 0;
+            putJson(path + "[" + end + "]", value);
+            return new ActionResult(true, "Added to " + path + "[" + end + "]=" + value);
+        } catch (Exception e) {
+            return new ActionResult(false, "appendJson error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * The value to store, as the JSON state can keep it.
+     *
+     * <p>An object or a list arrives here as an {@code org.json} value, which the state has no
+     * case for and would keep as its printed form — a string that happens to look like JSON,
+     * whose fields no path can reach. Handed over as text, the state parses it back into
+     * structure, which is what {@code JsonStatePutJson_260510_oo01} says a stored object is.</p>
+     *
+     * @param value what the action was given
+     * @return the same value, as text when it is an object or a list
+     */
+    private static Object valueOf(Object value) {
+        return (value instanceof JSONObject || value instanceof org.json.JSONArray)
+                ? value.toString() : value;
     }
 
     /**

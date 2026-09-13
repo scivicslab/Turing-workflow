@@ -65,6 +65,8 @@ Holds key-value pairs. Pre-populated with `-P` options from the CLI.
 | `hasJson` | `"key"` | Returns `"true"` or `"false"` |
 | `clearJson` | `""` | Clears JSON state |
 | `printJson` | `""` | Prints JSON state to stdout |
+| `onlyIf` | `"jexl: <condition>"` | Succeeds when the condition holds. Fails when it does not, or when it was never a yes-or-no answer, so the engine falls through to the next candidate transition |
+| `appendJson` | `{"path": "key.list", "value": <any>}` | Adds one value to the end of the list at that path |
 | `sleep` | `"1000"` | Sleeps N milliseconds |
 | `print` | `"text"` | Prints text to stdout |
 | `doNothing` | `""` | No-op (always succeeds) |
@@ -75,13 +77,29 @@ Every actor inherits these actions from `IIActorRef`:
 
 | Method | Arguments | Description |
 |--------|-----------|-------------|
-| `putJson` | `{"path": "key.nested", "value": <any>}` | Stores value in actor's JSON state |
+| `putJson` | `{"path": "key.nested", "value": <any>}` | Stores value in actor's JSON state. An object or array argument is stored as structure, so `key.nested.field` reaches into it |
+| `appendJson` | `{"path": "key.list", "value": <any>}` | Adds one value to the end of the list at that path. A path holding nothing becomes a list of one; a path holding anything that is not a list is refused |
 | `getJson` | `"key.nested"` | Reads from actor's JSON state; result goes to `${result}` |
 | `hasJson` | `"key"` | Checks existence; returns `"true"`/`"false"` |
 | `clearJson` | `""` | Clears actor's JSON state |
 | `printJson` | `""` | Prints actor's JSON state to stdout |
 
 ### 3.6 `calc` / `calc:name` — Numeric variable
+
+> **値の置き場としては使わない。** この4つ（`calc`・`list`・`str`・`out`）は、引数の中で計算する
+> 手段が無かった時期のものである。`jexl:` の式が入ってからは、数も文字列もリストもワークフロー
+> 自身の JSON 状態に置けて、`putJson`・`appendJson` で書き、`jexl: state...` で読める（SKILL.md
+> 3.2、`ActorsAsVariables_260914_oo01`）。名前で引かれた時点で作られる動作は互換のために残って
+> いるが、そのとき「どの遷移もこのアクターを作っていない」という警告が記録される。
+>
+> | ここに書いてある書き方 | 置き換え |
+> |---|---|
+> | `calc:i.set "0"` | `this.putJson {path: i, value: 0}` |
+> | `calc:i.inc` | `this.putJson {path: i, value: "jexl: state.getInt('i',0)+1"}` |
+> | `list:items.add` | `this.appendJson {path: items, value: ...}` |
+> | `list:items.size` | `jexl: state.select('items').size()` |
+> | `str:msg.set` | `this.putJson {path: msg, value: ...}` |
+> | `out.print` | `this.print` |
 
 Auto-created on first use. Named instances (`calc:x`, `calc:count`) are independent.
 Initial value is `0`. Returns the new value as a string after each operation.

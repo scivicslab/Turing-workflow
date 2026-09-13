@@ -165,7 +165,7 @@ steps:
 name: jexl-branch
 
 steps:
-  - states: ["jexl:state == 'error'", "handle-error"]
+  - states: ["jexl:currentState == 'error'", "handle-error"]
     label: detect-error
     note: "state string equals 'error'"
     actions:
@@ -173,7 +173,7 @@ steps:
         method: error
         arguments: "Error state detected."
 
-  - states: ["jexl:state == 'ok'", "handle-ok"]
+  - states: ["jexl:currentState == 'ok'", "handle-ok"]
     label: detect-ok
     actions:
       - actor: out
@@ -391,65 +391,61 @@ steps:
 
 ---
 
-### 5.10 Loop — `list:` actor full iteration
+### 5.10 Loop — walking a list held in the workflow's own state
+
+The list and the index are in the workflow's own JSON state. The condition that ends the loop is
+written as an action, first in this transition so that nothing has run when it fails. A failed action leaves
+the state unchanged, so the next step whose from-pattern matches — `["loop", "end"]` — is the one
+that runs. The exit is that transition, not the failure. Do not let a data action's failure stand
+in for the condition — `ExitConditionRidingOnAFailure_260914_oo01` says why.
 
 ```yaml
 name: list-loop
 
 steps:
-  - states: ["0", "1"]
-    label: add-items
-    note: "populate list (or fill it elsewhere before this step)"
+  - states: ["0", "loop"]
+    label: seed
+    note: "the list and the index, in this workflow's own state"
     actions:
-      - actor: list:items
-        method: add
-        arguments: "Apple"
-      - actor: list:items
-        method: add
-        arguments: "Banana"
-      - actor: list:items
-        method: add
-        arguments: "Cherry"
+      - actor: this
+        method: appendJson
+        arguments: {path: items, value: "Apple"}
+      - actor: this
+        method: appendJson
+        arguments: {path: items, value: "Banana"}
+      - actor: this
+        method: appendJson
+        arguments: {path: items, value: "Cherry"}
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: 0}
 
-  - states: ["1", "loop"]
-    label: setup
-    note: "initialize counter"
+  - states: ["loop", "loop"]
+    label: take-one
+    note: "the check states when the loop ends; it fails when the index reaches the length"
     actions:
-      - actor: calc:i
-        method: set
-        arguments: "0"
-
-  - states: ["loop", "process"]
-    label: get-item
-    note: "got item at index i → process"
-    actions:
-      - actor: list:items
-        method: get
-        arguments: "$(calc:i.get)"
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getInt('i',0) < state.select('items').size()"
+      - actor: this
+        method: print
+        arguments: "jexl: 'Processing: ' + state.select('items').get(state.getInt('i',0)).asText()"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: "jexl: state.getInt('i',0)+1"}
 
   - states: ["loop", "end"]
-    label: loop-done
-    note: "index out of range → all done"
+    label: nothing-left
     actions:
-      - actor: out
+      - actor: this
         method: print
         arguments: "All items processed."
-
-  - states: ["process", "loop"]
-    label: process-and-next
-    note: "${result} holds the item"
-    actions:
-      - actor: out
-        method: print
-        arguments: "Processing: ${result}"
-      - actor: calc:i
-        method: inc
 
   - states: ["!end", "end"]
     label: catch-all
     actions:
-      - actor: out
-        method: error
+      - actor: this
+        method: print
         arguments: "Workflow ended unexpectedly."
 ```
 

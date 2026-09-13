@@ -166,6 +166,8 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
                 System.out.println(arg);
                 success = true;
                 message = "Printed: " + arg;
+            } else if (actionName.equals("onlyIf")) {
+                return onlyIf(arg);
             } else if (actionName.equals("doNothing")) {
                 success = true;
                 message = arg;
@@ -193,6 +195,67 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
         }
 
         return new ActionResult(success, message);
+    }
+
+    /**
+     * A condition on the workflow's values, as an action.
+     *
+     * <p>A {@code states} pattern chooses on the state the workflow is in and cannot read the
+     * values it has stored, so a condition on those values is written here instead: the transition
+     * fails when it does not hold, and the engine falls to the next candidate transition from the
+     * same state. That is how a loop over a list ends
+     * ({@code ActorsAsVariables_260914_oo01}).</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: onlyIf
+     *   arguments: "jexl: state.getInt('i',0) < state.select('items').size()"
+     * }</pre>
+     *
+     * <p>Only a yes or a no is accepted. An expression that could not be evaluated answers
+     * {@code null}, and anything else — a number, a piece of text — is refused rather than read as
+     * a yes, so a mistyped condition stops the workflow instead of choosing a branch.</p>
+     *
+     * @param arg the argument as the interpreter passes it: a JSON array holding the one value the
+     *            expression answered
+     * @return success when the condition holds, failure when it does not or was never a condition
+     */
+    private ActionResult onlyIf(String arg) {
+        Object value = singleArgument(arg);
+        if (Boolean.TRUE.equals(value)) {
+            return new ActionResult(true, "onlyIf holds");
+        }
+        if (Boolean.FALSE.equals(value)) {
+            return new ActionResult(false, "onlyIf does not hold: false");
+        }
+        return new ActionResult(false, "onlyIf was not given a condition: " + value);
+    }
+
+    /**
+     * The one value an action's arguments carry.
+     *
+     * @param arg a JSON array, a JSON object with one value, or a bare string
+     * @return that value, or {@code null} when there is none
+     */
+    private static Object singleArgument(String arg) {
+        if (arg == null || arg.isBlank()) {
+            return null;
+        }
+        String text = arg.strip();
+        try {
+            if (text.startsWith("[")) {
+                org.json.JSONArray array = new org.json.JSONArray(text);
+                return array.isEmpty() || array.isNull(0) ? null : array.get(0);
+            }
+            if (text.startsWith("{")) {
+                org.json.JSONObject object = new org.json.JSONObject(text);
+                String key = object.keys().hasNext() ? object.keys().next() : null;
+                return key == null || object.isNull(key) ? null : object.get(key);
+            }
+        } catch (RuntimeException e) {
+            return text;
+        }
+        return text;
     }
 
 }

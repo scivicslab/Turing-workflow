@@ -20,6 +20,7 @@ package com.scivicslab.turingworkflow.workflow;
 import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.pojoactor.core.ActorProvider;
 import com.scivicslab.pojoactor.action.CallableByActionName;
+import com.scivicslab.pojoactor.core.ActorRef;
 import com.scivicslab.pojoactor.core.DynamicActorLoader;
 
 import org.json.JSONArray;
@@ -139,6 +140,9 @@ public class DynamicActorLoaderActor implements CallableByActionName {
 
                 case "createChild":
                     return createChild(args);
+
+                case "removeChild":
+                    return removeChild(args);
 
                 case "listLoadedJars":
                     return listLoadedJars();
@@ -375,6 +379,100 @@ public class DynamicActorLoaderActor implements CallableByActionName {
         } catch (Exception e) {
             return new ActionResult(false, "Failed to create child: " + e.getMessage());
         }
+    }
+
+    /**
+     * Removes an actor and everything below it, and unlinks it from its parent.
+     *
+     * <p>Arguments format:</p>
+     * <pre>{@code
+     * arguments: ["actorName"]
+     * arguments: ["parentActorName", "actorName"]   # the parent is ignored; the actor knows it
+     * }</pre>
+     *
+     * <p>Nothing here checks whether another actor still uses the one being removed: which
+     * references exist is not knowable from the registry. The workflow that created an actor knows
+     * when its work is over, so the decision belongs to the workflow, and this action carries it
+     * out as asked. What it does guarantee is that nothing is left half-removed — the actor's
+     * descendants go with it, so no child is left registered under a parent that no longer
+     * exists.</p>
+     *
+     * <p>The actor's own logs are untouched. They are rows in the log database, not state of the
+     * actor, and a removed actor's history is what a reader needs most.</p>
+     *
+     * @param args JSON array: [actorName] or [parentActorName, actorName]
+     * @return ActionResult naming every actor removed
+     */
+    private ActionResult removeChild(String args) {
+        try {
+            String actorName;
+            if (args != null && args.trim().startsWith("[")) {
+                JSONArray jsonArray = new JSONArray(args);
+                if (jsonArray.isEmpty()) {
+                    return new ActionResult(false, "Invalid args. Expected array: [actorName]");
+                }
+                actorName = jsonArray.getString(jsonArray.length() - 1).trim();
+            } else if (args != null && !args.isBlank()) {
+                String[] parts = args.split(",");
+                actorName = parts[parts.length - 1].trim();
+            } else {
+                return new ActionResult(false, "Invalid args. Expected array: [actorName]");
+            }
+
+            if (RootIIAR.ROOT_NAME.equals(actorName)) {
+                return new ActionResult(false, "Refusing to remove the root actor");
+            }
+
+            // getActor, not getIIActor: an actor system holds two registries — the plain one and
+            // the interpreter-interfaced one — and a subtree crosses both (a conversation tab is a
+            // plain actor whose .chat is an IIActorRef). getIIActor would also build a new actor
+            // for a built-in name such as calc, which is the opposite of removing one.
+            ActorRef<?> actor = system.getActor(actorName);
+            if (actor == null) {
+                return new ActionResult(false, "Actor not found: " + actorName);
+            }
+
+            String parentName = actor.getParentName();
+            if (parentName != null) {
+                ActorRef<?> parent = system.getActor(parentName);
+                if (parent != null) {
+                    parent.getNamesOfChildren().remove(actorName);
+                }
+            }
+
+            List<String> removed = new ArrayList<>();
+            removeSubtree(actor, removed);
+            return new ActionResult(true,
+                "Removed " + removed.size() + " actor(s): " + String.join(", ", removed));
+        } catch (Exception e) {
+            return new ActionResult(false, "Failed to remove child: " + e.getMessage());
+        }
+    }
+
+    /** Removes {@code actor}'s descendants, then the actor itself, naming each in {@code removed}. */
+    private void removeSubtree(ActorRef<?> actor, List<String> removed) {
+        for (String childName : new ArrayList<>(actor.getNamesOfChildren())) {
+            ActorRef<?> child = system.getActor(childName);
+            if (child != null) {
+                removeSubtree(child, removed);
+            } else {
+                forget(childName);
+            }
+        }
+        actor.getNamesOfChildren().clear();
+        forget(actor.getName());
+        try {
+            actor.close();
+        } catch (Exception e) {
+            logger.warning("Closing " + actor.getName() + " failed: " + e.getMessage());
+        }
+        removed.add(actor.getName());
+    }
+
+    /** Takes a name out of both registries; a name lives in one of them, and this does not ask which. */
+    private void forget(String actorName) {
+        system.removeActor(actorName);
+        system.removeIIActor(actorName);
     }
 
     /**

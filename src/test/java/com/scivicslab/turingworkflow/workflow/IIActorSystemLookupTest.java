@@ -18,6 +18,10 @@ import com.scivicslab.pojoactor.core.ActorRef;
  * names through {@code getActor} and nothing else, so an actor that only ever lands in the
  * interpreter-interfaced registry is unreachable from outside the JVM. Those are exactly the
  * actors a workflow can call, i.e. the ones a parent interpreter in another process needs.
+ *
+ * <p>What happens when one name is registered twice is no longer a question about two registries,
+ * and is checked in {@code IIActorRegistryTest} instead
+ * ({@code TwoRegistriesForOneActorPopulation_260914_oo01}).</p>
  */
 @Tag("WorkflowTab_Lookup_260906_oo01")
 @DisplayName("IIActorSystem — finding an interpreter-interfaced actor by name")
@@ -46,20 +50,6 @@ class IIActorSystemLookupTest {
 
             assertNotNull(found, "getActor must find an actor added through addIIActor");
             assertSame(added, found);
-        } finally {
-            system.terminate();
-        }
-    }
-
-    /** A plain actor of the same name keeps winning: the two registries must not swap places. */
-    @Test
-    void plainActorOfTheSameNameIsPreferred() {
-        IIActorSystem system = new IIActorSystem("lookup-collision");
-        try {
-            ActorRef<String> plain = system.actorOf("both", "plain");
-            system.addIIActor(new Callable("both", system));
-
-            assertSame(plain, system.getActor("both"));
         } finally {
             system.terminate();
         }

@@ -41,6 +41,11 @@ steps:
         arguments: ["arg1", "arg2"]
 ```
 
+An argument written as `jexl:` that cannot be evaluated — a name or a method that is not there —
+fails the action it belongs to, with the expression in the message. The state does not change, so
+the next step whose from-pattern matches runs; if none does, the workflow stops. An expression that
+evaluates to nothing is a value like any other and is passed on as null.
+
 **`params` section** — optional metadata consumed by the Turing Workflow Editor Run panel.
 When present, the editor shows each parameter's description as a placeholder and pre-fills
 its `default` value in the input form. Parameters without a `default` require manual input.
@@ -110,10 +115,18 @@ Both elements of `states` may be JEXL expressions prefixed with `jexl:`.
 
 | Variable | Type | Value |
 |----------|------|-------|
-| `state` / `s` | String | Current state string |
-| `n` | Number or null | Current state parsed as a number; `null` if not parseable |
+| `currentState` | String | The state the workflow is in |
+| `n` | Number or null | The same state parsed as a number; `null` if not parseable |
 
-If `n` is `null`, numeric comparisons throw an exception — avoid mixing numeric and string states
+An action's argument expression calls the state the same thing (`currentState`); `state` there is
+the workflow's stored values (section 3.2), which a `states` pattern cannot reach. Put conditions
+on the data in the transition's actions instead, with `this.onlyIf` (section 3.2): a false condition
+fails the transition, the state does not change, and the next step whose from-pattern matches is
+the one that runs. Where the workflow goes is always a from-pattern's decision.
+
+The evaluator is strict: a name the pattern does not have, and a method the value does not have,
+raise rather than reading as nothing. The expression is logged and the pattern matches nothing.
+If `n` is `null`, numeric comparisons raise the same way — avoid mixing numeric and string states
 in the same JEXL expression.
 
 **Numeric shorthand** — available without `jexl:` prefix:
@@ -130,7 +143,7 @@ in the same JEXL expression.
 ```yaml
 states: ["jexl:n < 10", "jexl:n + 1"]   # loop: state increments each iteration
 states: ["jexl:n >= 10", "end"]          # exit when counter reaches 10
-states: ["jexl:state == 'error'", "end"] # string comparison
+states: ["jexl:currentState == 'error'", "end"] # string comparison
 states: [">=10", "end"]                  # shorthand numeric comparison (no jexl: prefix)
 ```
 
@@ -162,21 +175,105 @@ java -jar turing-workflow-4.0.0-shaded.jar run \
 
 ---
 
-## 3. Built-in Actors
+## 3. Actors and values
 
-The following actors are always available without any plugin loading.
+### 3.1 Build the actor tree first, then compute
+
+A workflow's first transitions create the actors it uses; its last ones remove them. The actor
+tree then shows what this workflow is made of, a misspelt actor name fails where it is written,
+and the actors a run created are the actors that run removes
+(`RemovingActorsFromAWorkflow_260913_oo01`, `LookupThatCreates_260914_oo01`).
+
+```yaml
+  - states: ["0", "setup"]
+    label: build-actor-tree
+    actions:
+      - actor: loader
+        method: loadJar
+        arguments: "com.scivicslab.turingworkflow.plugins:plugin-openalex:4.1.0"
+      - actor: loader
+        method: createChild
+        arguments: ["ROOT", "openalex", "com.scivicslab.turingworkflow.plugins.openalex.OpenAlexActor"]
+
+  - states: ["!end", "end"]
+    label: tear-down-actor-tree
+    actions:
+      - actor: loader
+        method: removeChild
+        arguments: "openalex"
+```
+
+### 3.2 Keep values in the workflow's own state, not in actors
+
+Values belong in the JSON state of the actor the workflow runs as, reached as `this` from a
+transition and as `state` from a `jexl:` expression. Do not create an actor to hold a number, a
+string or a list (`ActorsAsVariables_260914_oo01`).
+
+```yaml
+  - states: ["setup", "loop"]
+    label: start-at-zero
+    actions:
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: 0}
+
+  - states: ["process", "loop"]
+    label: next
+    actions:
+      - actor: this
+        method: appendJson
+        arguments: {path: done, value: "jexl: result"}
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: "jexl: state.getInt('i',0)+1"}
+```
+
+| したいこと | 書き方 |
+|---|---|
+| 値を置く | `actor: this` / `putJson` / `{path: ..., value: ...}` |
+| リストの末尾に足す | `actor: this` / `appendJson` / `{path: ..., value: ...}` |
+| 値を読む | `jexl: state.getInt('i',0)`, `state.getString('name')`, `state.select('items').size()` |
+| 状態を全部見る | `actor: this` / `printJson` |
+| 出力する | `actor: this` / `print` |
+| データで分岐する | `actor: this` / `onlyIf` / `"jexl: 条件"` — 偽なら遷移が失敗する。状態は変わらないので、同じ遷移元の次の遷移が拾う |
+
+```yaml
+  - states: ["loop", "loop"]
+    label: take-one
+    actions:
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getInt('i',0) < state.select('items').size()"
+      - actor: this
+        method: appendJson
+        arguments:
+          path: seen
+          value: "jexl: state.select('items').get(state.getInt('i',0)).asText()"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: "jexl: state.getInt('i',0)+1"}
+
+  - states: ["loop", "end"]      # 行き先はここ。遷移元パターンが決める
+    label: nothing-left
+```
+
+`onlyIf` は行き先を決めません。決めるのは常に遷移元パターンです。`onlyIf` が偽なら遷移が失敗し、状態が変わらないまま次のステップが試され、`["loop", "end"]` がそれを拾います。出口の遷移を書き忘れると、ワークフローは「一致する遷移が無い」で止まります。
+
+失敗した時点までのアクションは実行済みで、巻き戻りません。上の例で `onlyIf` が先頭にあるのはそのためで、ループでは多くの場合この形になります。条件が同じ遷移の前のアクションの産物に依存するなら先頭には置けず、そのとき残る効果は意図したものです。順序は、残ってよい効果かどうかで決めます。
+
+### 3.3 Built-in actors
 
 | Actor | 役割 |
 |-------|------|
-| `loader` | 外部JARの動的ロードとアクター生成 |
+| `loader` | 外部JARの動的ロードとアクターの生成・削除 |
 | `log` | 構造化ログエントリの蓄積 |
 | `vars` | キーバリューの変数ストア（`-P`で事前投入） |
-| `interpreter` | ワークフローエンジン自己参照・JSON状態管理 |
-| `calc` / `calc:name` | 数値変数（JEXL式評価対応） |
-| `list` / `list:name` | 文字列リスト（`ArrayList<String>`ラッパー） |
-| `str` / `str:name` | 文字列変数（JSON安全エスケープ対応） |
-| `out` | 標準出力・標準エラー出力 |
-| `this` | サブワークフロー呼び出し |
+| `interpreter` / `this` | ワークフローエンジン自己参照・JSON状態管理・サブワークフロー呼び出し |
+| `parallel-map` | サブワークフローの並列展開 |
+
+`calc` / `calc:name`、`list` / `list:name`、`str` / `str:name`、`out` の4つは、JSON 状態が無かった
+時期の値の置き場である。名前で引かれた時点で作られるが、そのとき警告が記録される。新しい
+ワークフローでは 3.2 の書き方を使い、既存のものは順次そちらへ移す。
 
 詳細は `reference/built-in-actors.md` を参照
 
@@ -434,17 +531,29 @@ When asked to generate a Turing workflow YAML, follow these rules:
    **Always include a `params:` section** for every `${varName}` placeholder used in the workflow.
    Each entry should have a `description` (shown in the editor UI) and a `default` if a sensible
    default exists. Example: if the workflow uses `${agent}`, add `agent: { description: "Agent name", default: "claude" }`.
-8. **Storing inter-step data**: use `interpreter.putJson` / `interpreter.getJson` or
-   actor-level `putJson` / `getJson` to pass results between non-adjacent steps.
+8. **Storing inter-step data**: use `this.putJson` / `this.appendJson` and read it back with
+   `jexl: state.getString('key')`. Every actor has a JSON state of its own; the one a workflow
+   shares between its steps is the interpreter's (section 3.2).
 9. **Actor arguments format**: single value → plain string; multiple values → JSON array
    `["a", "b"]`; structured data → JSON object `{"key": "value"}`.
-10. **A transition succeeds when ALL its actions return `ActionResult(true, ...)`**.
-    Design actors to return `false` for sentinel conditions (e.g., "no more items") rather
-    than throwing exceptions, so the engine can fall through to the exit transition naturally.
-11. **Loops**: use `calc` counter (section 5.4) for index-based iteration, or `getNextWarning`/`getNextContext`
-    (cursor-based) from `promptBuilder`. Use JEXL state expressions (section 5.5) when the state itself
-    is the counter. Never hardcode repeated steps when a loop will do.
-12. **`calc`, `list`, `str`, `out` are built-in** — they auto-create on first use, no `loader` needed.
+10. **A transition succeeds when ALL its actions return `ActionResult(true, ...)`.** A failed
+    action fails the transition at that point; the state does not change, so the next step whose
+    from-pattern matches the same state is tried. **Where the workflow goes is always decided by a
+    from-pattern** — a failed action cannot name a destination — so the loop's exit must exist as
+    `["loop", "end"]`. Write the condition that ends a loop as `this.onlyIf` (section 3.2) rather
+    than as a data action that happens to fail when there is nothing left
+    (`ExitConditionRidingOnAFailure_260914_oo01`). The actions before a failure have already run
+    and are not undone, so in a loop the condition usually comes first; when the condition reads
+    what an earlier action in the same transition produced, it cannot, and the effect that remains
+    is the one that was wanted. An actor still returns `false` rather than throwing when it
+    genuinely cannot do its work.
+11. **Loops**: keep the index in the workflow's own state (section 3.2) and step it with
+    `jexl: state.getInt('i',0)+1`, or use `getNextWarning`/`getNextContext` (cursor-based) from
+    `promptBuilder`. Use JEXL state expressions (section 5.5) when the state itself is the counter.
+    Never hardcode repeated steps when a loop will do.
+12. **Create every actor you use** in the workflow's first transitions and remove them in its last
+    (section 3.1). `calc`, `list`, `str` and `out` still appear on first use, but each one logs a
+    warning saying no transition created it.
 13. **`$(actor.method)` vs `${result}`**: use `$(actor.method)` to read an actor's current value
     as an argument (e.g., `"$(calc.get)"`). Use `${result}` to pass the previous action's output.
 14. **Do not embed `${result}` inside a JSON string argument** when the result may contain

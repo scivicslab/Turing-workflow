@@ -101,6 +101,58 @@ class WorkflowExpressionsTest {
     }
 
     @Nested
+    @DisplayName("a list held in the workflow's own state")
+    class ListsInState {
+
+        /** An actor whose state the expressions read, standing for the one a workflow runs as. */
+        private WorkflowExpressions expressionsOf(IIActorRef<?> actor) {
+            return new WorkflowExpressions(system, actor, "loop");
+        }
+
+        private IIActorRef<Object> actorHoldingThreeItems() {
+            IIActorRef<Object> holder = new IIActorRef<Object>("holder", new Object(), system) {};
+            system.addIIActor(holder);
+            holder.callByActionName("appendJson", "{\"path\":\"xs\",\"value\":\"a\"}");
+            holder.callByActionName("appendJson", "{\"path\":\"xs\",\"value\":\"b\"}");
+            holder.callByActionName("appendJson", "{\"path\":\"xs\",\"value\":\"c\"}");
+            return holder;
+        }
+
+        /**
+         * How long a list is, which is what a loop over it needs.
+         *
+         * <p>{@code select} answers a Jackson node, and calling a method on a class JEXL has not
+         * been given permission for answers {@code null} rather than failing. Before the state's
+         * own data model was permitted, {@code size()} on a three-item list answered {@code 1} —
+         * JEXL's size of one opaque object — and a loop written against it ran once.</p>
+         */
+        @Test
+        @DisplayName("its length is the number of items in it")
+        void size_isTheNumberOfItems() {
+            IIActorRef<Object> holder = actorHoldingThreeItems();
+
+            assertEquals(3, expressionsOf(holder).evaluate("state.select(\"xs\").size()"));
+        }
+
+        @Test
+        @DisplayName("an item is reachable by index")
+        void item_isReachableByIndex() {
+            IIActorRef<Object> holder = actorHoldingThreeItems();
+
+            assertEquals("b", expressionsOf(holder).evaluate("state.select(\"xs\").get(1).asText()"));
+            assertEquals("a", expressionsOf(holder).evaluate("state.getString(\"xs[0]\")"));
+        }
+
+        @Test
+        @DisplayName("whether a path holds a list can be asked")
+        void isArray_answersTrue() {
+            IIActorRef<Object> holder = actorHoldingThreeItems();
+
+            assertEquals(true, expressionsOf(holder).evaluate("state.select(\"xs\").isArray()"));
+        }
+    }
+
+    @Nested
     @DisplayName("names and text")
     class NamesAndText {
 
@@ -120,6 +172,31 @@ class WorkflowExpressionsTest {
                     "\"processed: \" + actors.get(\"str:in\").get()");
 
             assertEquals("processed: alpha", outcome);
+        }
+
+        /**
+         * A method the object does not have is an error, not an answer of nothing.
+         *
+         * <p>JEXL navigates safely by default: an unsolvable method answers {@code null} without
+         * raising, and so does a call on {@code null}. The argument then reaches the action as
+         * JSON null and the action runs on it — a workflow calling {@code inc()} where the object
+         * has {@code increment()} printed "null" and reported success. Raising puts the
+         * expression in the log and the mistake in front of whoever wrote it.</p>
+         */
+        @Test
+        @DisplayName("a method the object does not have raises rather than answering nothing")
+        void unknownMethod_raises() {
+            system.getIIActor("str:x").callByActionName("set", "text");
+
+            assertThrows(RuntimeException.class,
+                    () -> expressions.evaluate("actors.get(\"str:x\").noSuchMethod()"));
+        }
+
+        @Test
+        @DisplayName("a call on nothing raises rather than answering nothing")
+        void callOnNull_raises() {
+            assertThrows(RuntimeException.class,
+                    () -> expressions.evaluate("actors.get(\"nobody:here\").get()"));
         }
 
         @Test

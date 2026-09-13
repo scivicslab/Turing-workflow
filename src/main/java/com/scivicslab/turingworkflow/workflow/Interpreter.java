@@ -191,8 +191,16 @@ public class Interpreter {
             String actorPath = a.getActor();
             String action    = a.getMethod();
 
-            // Convert arguments to JSON format
-            String argumentString = convertArgumentsToJson(a);
+            // Convert arguments to JSON format. An expression that cannot be evaluated fails the
+            // action here, before the actor is asked to do anything with a null.
+            String argumentString;
+            try {
+                argumentString = convertArgumentsToJson(a);
+            } catch (ArgumentExpressionException e) {
+                ActionResult badArgument = new ActionResult(false, e.getMessage());
+                logger.exiting(CLASS_NAME, "action", badArgument);
+                return badArgument;
+            }
 
             // Resolve actor path using Unix-style notation or wildcard
             List<IIActorRef<?>> actors;
@@ -302,15 +310,32 @@ public class Interpreter {
      * {@code jexl: actors.get("calc:i").get()} arrives as {@code 3.0}.</p>
      *
      * @param expression the expression, without the {@code jexl:} marker
-     * @return whatever it evaluates to, or the text of the failure when it cannot be evaluated
+     * @return whatever it evaluates to; {@code JSONObject.NULL} when it answers nothing
+     * @throws ArgumentExpressionException when it cannot be evaluated at all
      */
     private Object evaluateArgumentExpression(String expression) {
         try {
             Object outcome = new WorkflowExpressions(system, selfActorRef, currentState).evaluate(expression);
             return outcome == null ? JSONObject.NULL : outcome;
+        } catch (ArgumentExpressionException e) {
+            throw e;
         } catch (Exception e) {
             logger.warning("Argument expression failed: " + expression + " -- " + e.getMessage());
-            return JSONObject.NULL;
+            throw new ArgumentExpressionException(expression, e);
+        }
+    }
+
+    /**
+     * An argument the workflow wrote as an expression that could not be evaluated.
+     *
+     * <p>Carried out of argument conversion so that the action is not run at all. The expression
+     * is the workflow's own text, not the actor's work: a mistyped method name is a fault in what
+     * was written, and handing the action {@code null} instead let such a workflow run to the end
+     * and report success.</p>
+     */
+    private static class ArgumentExpressionException extends RuntimeException {
+        ArgumentExpressionException(String expression, Exception cause) {
+            super("argument expression failed: " + expression + " -- " + cause.getMessage(), cause);
         }
     }
 
@@ -911,7 +936,10 @@ public class Interpreter {
      *   <li>Negation: "!end" matches anything except "end"</li>
      *   <li>OR condition: "1|2|3" matches "1", "2", or "3"</li>
      *   <li>Numeric comparison: ">=1", "&lt;5" etc.</li>
-     *   <li>JEXL expression: "jexl:state >= 5 &amp;&amp; state &lt; 10"</li>
+     *   <li>JEXL expression: "jexl:currentState == 'error'", or "jexl:n &gt;= 5 &amp;&amp; n &lt; 10"
+     *       on a numeric state. The state the workflow is in is {@code currentState}, the same name
+     *       an action's argument expression calls it by; {@code state} is an action argument's
+     *       name for the workflow's stored values and means nothing here</li>
      * </ul>
      *
      * @param pattern the state pattern (may contain wildcards, operators, etc.)
@@ -966,11 +994,25 @@ public class Interpreter {
     /**
      * Gets the JEXL engine instance (lazy initialization).
      */
+    /**
+     * The evaluator for the expressions in {@code states}.
+     *
+     * <p>Strict, so that a name the pattern does not have raises rather than reading as
+     * {@code null}. Read as null, {@code jexl:state != 'end'} — a workflow written when the state
+     * string was called {@code state} — is true in every state, and the transition that was meant
+     * to be a catch-all fires immediately. Raising is caught by the caller, which logs the
+     * expression and matches nothing, so the mistake stops the run instead of redirecting it.</p>
+     *
+     * <p>{@code safe(false)} for the same reason one step further in: without it, a method the
+     * value does not have answers {@code null} rather than raising, and a pattern built on it
+     * quietly matches nothing.</p>
+     */
     private static synchronized JexlEngine getJexlEngine() {
         if (jexlEngine == null) {
             jexlEngine = new JexlBuilder()
-                    .silent(true)
-                    .strict(false)
+                    .silent(false)
+                    .strict(true)
+                    .safe(false)
                     .create();
         }
         return jexlEngine;
@@ -981,8 +1023,9 @@ public class Interpreter {
      *
      * <p>The expression has access to the following variables:</p>
      * <ul>
-     *   <li>{@code state} - the current state as a string</li>
-     *   <li>{@code s} - alias for state</li>
+     *   <li>{@code currentState} - the state the workflow is in, as a string. An action's
+     *       argument expression calls it by the same name; {@code state} there is the workflow's
+     *       stored values, which a pattern cannot reach</li>
      *   <li>{@code n} - the state parsed as a number (or null if not numeric)</li>
      * </ul>
      *
@@ -1004,8 +1047,7 @@ public class Interpreter {
             JexlExpression jexlExpr = engine.createExpression(expression);
 
             JexlContext context = new MapContext();
-            context.set("state", state);
-            context.set("s", state);
+            context.set(WorkflowExpressions.CURRENT_STATE_NAME, state);
 
             // Try to parse state as a number
             try {
@@ -1094,8 +1136,7 @@ public class Interpreter {
         try {
             JexlEngine engine = getJexlEngine();
             JexlContext context = new MapContext();
-            context.set("state", state);
-            context.set("s", state);
+            context.set(WorkflowExpressions.CURRENT_STATE_NAME, state);
             try {
                 double n = Double.parseDouble(state);
                 context.set("n", n);

@@ -335,8 +335,8 @@ public class StatePatternMatchingTest {
         @Test
         @DisplayName("Should evaluate simple equality")
         public void testJexlEquality() {
-            assertTrue(interpreter.matchesStatePattern("jexl:state == 'error'", "error"));
-            assertFalse(interpreter.matchesStatePattern("jexl:state == 'error'", "ok"));
+            assertTrue(interpreter.matchesStatePattern("jexl:currentState == 'error'", "error"));
+            assertFalse(interpreter.matchesStatePattern("jexl:currentState == 'error'", "ok"));
         }
 
         @Test
@@ -358,26 +358,43 @@ public class StatePatternMatchingTest {
         @Test
         @DisplayName("Should evaluate OR expressions")
         public void testJexlOrExpression() {
-            assertTrue(interpreter.matchesStatePattern("jexl:state == 'a' || state == 'b'", "a"));
-            assertTrue(interpreter.matchesStatePattern("jexl:state == 'a' || state == 'b'", "b"));
-            assertFalse(interpreter.matchesStatePattern("jexl:state == 'a' || state == 'b'", "c"));
+            assertTrue(interpreter.matchesStatePattern("jexl:currentState == 'a' || currentState == 'b'", "a"));
+            assertTrue(interpreter.matchesStatePattern("jexl:currentState == 'a' || currentState == 'b'", "b"));
+            assertFalse(interpreter.matchesStatePattern("jexl:currentState == 'a' || currentState == 'b'", "c"));
         }
 
         @Test
         @DisplayName("Should evaluate regex matching")
         public void testJexlRegexMatch() {
-            assertTrue(interpreter.matchesStatePattern("jexl:state =~ 'error.*'", "error"));
-            assertTrue(interpreter.matchesStatePattern("jexl:state =~ 'error.*'", "error_123"));
-            assertFalse(interpreter.matchesStatePattern("jexl:state =~ 'error.*'", "warning"));
+            assertTrue(interpreter.matchesStatePattern("jexl:currentState =~ 'error.*'", "error"));
+            assertTrue(interpreter.matchesStatePattern("jexl:currentState =~ 'error.*'", "error_123"));
+            assertFalse(interpreter.matchesStatePattern("jexl:currentState =~ 'error.*'", "warning"));
         }
 
         @Test
         @DisplayName("Should evaluate string methods")
         public void testJexlStringMethods() {
-            assertTrue(interpreter.matchesStatePattern("jexl:state.startsWith('err')", "error"));
-            assertTrue(interpreter.matchesStatePattern("jexl:state.endsWith('ing')", "processing"));
-            assertTrue(interpreter.matchesStatePattern("jexl:state.contains('mid')", "in_middle_here"));
-            assertFalse(interpreter.matchesStatePattern("jexl:state.startsWith('err')", "warning"));
+            assertTrue(interpreter.matchesStatePattern("jexl:currentState.startsWith('err')", "error"));
+            assertTrue(interpreter.matchesStatePattern("jexl:currentState.endsWith('ing')", "processing"));
+            assertTrue(interpreter.matchesStatePattern("jexl:currentState.contains('mid')", "in_middle_here"));
+            assertFalse(interpreter.matchesStatePattern("jexl:currentState.startsWith('err')", "warning"));
+        }
+
+        /**
+         * The name a workflow written before the vocabularies were separated used.
+         *
+         * <p>{@code state} used to mean the state string here and the stored values in an action's
+         * argument, so one word meant two things. It now means the values only, and is absent from
+         * a pattern: an expression naming it raises, is logged, and matches nothing. A workflow not
+         * yet migrated loses the transition — the catch-all stops firing and the run fails — rather
+         * than matching every state silently, which is what leaving it defined as the values would
+         * have done ({@code 'end' != <the stored values>} is true for every state).</p>
+         */
+        @Test
+        @DisplayName("The former name of the state matches nothing rather than everything")
+        public void testFormerStateNameMatchesNothing() {
+            assertFalse(interpreter.matchesStatePattern("jexl:state != 'end'", "0"));
+            assertFalse(interpreter.matchesStatePattern("jexl:state != 'end'", "end"));
         }
 
         @Test

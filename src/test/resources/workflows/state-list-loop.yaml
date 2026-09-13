@@ -1,0 +1,39 @@
+name: state-list-loop
+description: |
+  Walks a list held in the workflow's own state. The guard is an action, so the transition fails
+  when the index reaches the end and the engine falls through to the transition below it.
+
+steps:
+  - states: ["0", "loop"]
+    label: seed
+    actions:
+      - actor: this
+        method: appendJson
+        arguments: {path: items, value: "alpha"}
+      - actor: this
+        method: appendJson
+        arguments: {path: items, value: "beta"}
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: 0}
+
+  - states: ["loop", "loop"]
+    label: take-one
+    actions:
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getInt('i',0) < state.select('items').size()"
+      - actor: this
+        method: appendJson
+        arguments:
+          path: seen
+          value: "jexl: state.select('items').get(state.getInt('i',0)).asText()"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: "jexl: state.getInt('i',0)+1"}
+
+  - states: ["loop", "end"]
+    label: nothing-left
+    actions:
+      - actor: this
+        method: doNothing

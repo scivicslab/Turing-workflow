@@ -17,7 +17,6 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +26,7 @@ import java.util.logging.Logger;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.scivicslab.pojoactor.core.ActorRef;
 import com.scivicslab.pojoactor.core.ActorSystem;
@@ -43,6 +43,14 @@ import com.scivicslab.pojoactor.core.ActorSystem;
  * This {@code IIActorSystem} is a subclass of {@code ActorSystem} with the function of managing {@code IIActorRef}.
  * The {@code IIActorSystem} can manage ordinary {@code ActorRefs} as well as the {@code IIActorRef}s,
  * so the two can be used intermixed in a program.
+ * </p>
+ * <p>
+ * Both kinds are held in the one registry the {@code ActorSystem} already has, since an
+ * {@code IIActorRef} is an {@code ActorRef}. The methods below tell them apart by type rather than
+ * by where they are kept ({@code TwoRegistriesForOneActorPopulation_260914_oo01}); a second
+ * registry made one name registrable twice, hid half the population from
+ * {@code listActorNames}, and left the interpreter-facing actors open when the system was
+ * terminated.
  * </p>
  *
  * <p>The following methods have been added to manage IIActorRef objects:</p>
@@ -61,8 +69,6 @@ public class IIActorSystem extends ActorSystem {
     private static final Logger LOGGER = Logger.getLogger(IIActorSystem.class.getName());
     private static final String CLASS_NAME = IIActorSystem.class.getName();
 
-    ConcurrentHashMap<String, IIActorRef<?>> iiActors = new ConcurrentHashMap<>();
-
     /** Ways of building an actor from a name this system does not have; see addActorFactory. */
     private final List<Function<String, IIActorRef<?>>> actorFactories = new CopyOnWriteArrayList<>();
 
@@ -80,7 +86,7 @@ public class IIActorSystem extends ActorSystem {
     public IIActorSystem(String systemName) {
         super(systemName);
         this.rootActor = new RootIIAR(this);
-        iiActors.put(RootIIAR.ROOT_NAME, rootActor);
+        addActor(rootActor);
     }
 
     /**
@@ -95,7 +101,7 @@ public class IIActorSystem extends ActorSystem {
     public IIActorSystem(String systemName, int threadNum) {
         super(systemName, threadNum);
         this.rootActor = new RootIIAR(this);
-        iiActors.put(RootIIAR.ROOT_NAME, rootActor);
+        addActor(rootActor);
     }
 
     /**
@@ -113,7 +119,7 @@ public class IIActorSystem extends ActorSystem {
      */
     public <T> IIActorRef<T> addIIActor(IIActorRef<T> actor) {
         String actorName = actor.getName();
-        iiActors.put(actorName, actor);
+        addActor(actor);
 
         // Add as child of ROOT if no parent is set (and it's not ROOT itself)
         if (actor.getParentName() == null && !RootIIAR.ROOT_NAME.equals(actorName)) {
@@ -125,38 +131,38 @@ public class IIActorSystem extends ActorSystem {
     }
 
     /**
-     * Retrieves an actor by name, looking in the interpreter-interfaced registry when the plain
-     * one has no actor of that name.
-     *
-     * <p>{@code addIIActor} files an actor only under {@link #iiActors}, so without this the two
-     * registries are invisible to each other. That matters outside this JVM:
-     * {@code HttpActorServer} resolves every incoming name through {@code getActor}, so an actor
-     * a workflow can call would not be callable from another process — which is the whole of what
-     * a parent interpreter does to its children.
-     *
-     * <p>A plain actor of the same name wins, so nothing that resolves today resolves differently.
-     *
-     * @param <T> the type of the actor object
-     * @param actorName the name of the actor to retrieve
-     * @return the actor reference, or {@code null} if neither registry has that name
-     */
-    @Override
-    @SuppressWarnings("unchecked")
-    public <T> ActorRef<T> getActor(String actorName) {
-        ActorRef<T> plain = super.getActor(actorName);
-        return plain != null ? plain : (ActorRef<T>) iiActors.get(actorName);
-    }
-
-    /**
      * Retrieves an interpreter-interfaced actor by name.
+     *
+     * <p>The actors a workflow can call are the {@link IIActorRef} instances among this system's
+     * actors, so this reads the one registry and tells them apart by type
+     * ({@code TwoRegistriesForOneActorPopulation_260914_oo01}).</p>
+     *
+     * <p>A built-in name ({@code calc}, {@code list}, {@code out}, {@code str},
+     * {@code parallel-map}) with nothing registered under it is still made here, which is what
+     * existing workflows are written against ({@code LookupThatCreates_260914_oo01}). A name an
+     * ordinary actor already holds is never made over: answering {@code null} says the name is
+     * taken, where making one would replace an actor someone else registered, at a lookup.</p>
      *
      * @param <T> the type of the actor object
      * @param name the name of the actor to retrieve
-     * @return the actor reference, or {@code null} if not found
+     * @return the actor reference, or {@code null} when no actor of that name can be called by a
+     *         workflow
      */
     @SuppressWarnings("unchecked")
     public <T> IIActorRef<T> getIIActor(String name) {
-        return (IIActorRef<T>) iiActors.computeIfAbsent(name, this::tryAutoCreate);
+        ActorRef<?> registered = getActor(name);
+        if (registered != null) {
+            return registered instanceof IIActorRef<?> facing ? (IIActorRef<T>) facing : null;
+        }
+        IIActorRef<?> made = tryAutoCreate(name);
+        if (made == null) {
+            return null;
+        }
+        addIIActor(made);
+        LOGGER.warning("Actor '" + name + "' was made at a lookup because no transition created it."
+                + " Create it with loader.createChild, or keep the value in the workflow's own"
+                + " state (LookupThatCreates_260914_oo01).");
+        return (IIActorRef<T>) made;
     }
 
     /**
@@ -208,7 +214,7 @@ public class IIActorSystem extends ActorSystem {
      * @return {@code true} if the actor exists, {@code false} otherwise
      */
     public boolean hasIIActor(String name) {
-        return this.iiActors.containsKey(name);
+        return getActor(name) instanceof IIActorRef<?>;
     }
 
     /**
@@ -220,8 +226,12 @@ public class IIActorSystem extends ActorSystem {
      * @param name the name of the actor to remove
      */
     public void removeIIActor(String name) {
-        IIActorRef<?> actor = this.iiActors.remove(name);
-        if (actor != null && RootIIAR.ROOT_NAME.equals(actor.getParentName())) {
+        ActorRef<?> registered = getActor(name);
+        if (!(registered instanceof IIActorRef<?> actor)) {
+            return;
+        }
+        removeActor(name);
+        if (RootIIAR.ROOT_NAME.equals(actor.getParentName())) {
             rootActor.getNamesOfChildren().remove(name);
         }
     }
@@ -232,7 +242,7 @@ public class IIActorSystem extends ActorSystem {
      * @return the count of IIActorRef instances
      */
     public int getIIActorCount() {
-        return iiActors.size();
+        return (int) interpreterFacingActors().count();
     }
 
     /**
@@ -279,28 +289,20 @@ public class IIActorSystem extends ActorSystem {
     }
 
     /**
-     * Returns the names of all interpreter-interfaced actors in this system.
-     *
-     * <p>This method overrides the base class method to return IIActorRef names
-     * instead of regular ActorRef names.</p>
-     *
-     * @return a list of actor names
-     * @since 2.9.0
-     */
-    @Override
-    public List<String> listActorNames() {
-        return new ArrayList<>(iiActors.keySet());
-    }
-
-    /**
      * Terminates all interpreter-interfaced actors managed by this system.
      *
      * <p>This method closes all registered IIActorRef instances, releasing
      * their associated resources.</p>
      */
     public void terminateIIActors() {
-        iiActors.keySet().stream()
-            .forEach((name)->iiActors.get(name).close());
+        interpreterFacingActors().forEach(IIActorRef::close);
+    }
+
+    /** The actors of this system a workflow can call, i.e. the {@link IIActorRef} instances. */
+    private Stream<IIActorRef<?>> interpreterFacingActors() {
+        return actors.values().stream()
+                .filter(a -> a instanceof IIActorRef<?>)
+                .map(a -> (IIActorRef<?>) a);
     }
 
     /**

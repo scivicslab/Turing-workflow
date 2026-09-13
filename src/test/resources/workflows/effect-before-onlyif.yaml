@@ -1,0 +1,28 @@
+name: effect-before-onlyif
+description: |
+  A transition whose condition is not first. The write in front of it happens, the condition then
+  fails, and the state stays where it was — with the write still in it.
+
+steps:
+  - states: ["0", "loop"]
+    label: seed
+    actions:
+      - actor: this
+        method: putJson
+        arguments: {path: allowed, value: false}
+
+  - states: ["loop", "loop"]
+    label: write-then-onlyif
+    actions:
+      - actor: this
+        method: appendJson
+        arguments: {path: written, value: "one"}
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getBoolean('allowed', false)"
+
+  - states: ["loop", "end"]
+    label: nothing-left
+    actions:
+      - actor: this
+        method: doNothing
