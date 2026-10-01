@@ -28,6 +28,7 @@ import jdk.javadoc.doclet.Reporter;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.tools.Diagnostic;
@@ -133,7 +134,11 @@ public class TuringPluginDoclet implements Doclet {
 
                 Map<String, Object> action = new LinkedHashMap<>();
                 action.put("name", actionName);
-                action.put("argsFormat", inferArgsFormat(method, docTrees));
+                // A method whose one parameter is a record takes a JSON object whose keys are the
+                // record's components; its field prose is the record's own @param tags
+                // (ActionCatalogWithJavadoc_260930_oo01).
+                TypeElement argsRecord = argumentRecord(method, env);
+                action.put("argsFormat", argsRecord != null ? "object" : inferArgsFormat(method, docTrees));
 
                 DocCommentTree docTree = docTrees.getDocCommentTree(method);
                 if (docTree != null) {
@@ -144,8 +149,10 @@ public class TuringPluginDoclet implements Doclet {
                     if (!description.isEmpty()) {
                         action.put("description", description);
                     }
-
-                    List<Map<String, String>> params = extractParams(docTree);
+                }
+                DocCommentTree paramsTree = argsRecord != null ? docTrees.getDocCommentTree(argsRecord) : docTree;
+                if (paramsTree != null) {
+                    List<Map<String, String>> params = extractParams(paramsTree);
                     if (!params.isEmpty()) {
                         action.put("params", params);
                     }
@@ -201,6 +208,14 @@ public class TuringPluginDoclet implements Doclet {
         }
 
         return "string";
+    }
+
+    /** The record type of the method's single parameter, or null when the parameter is not a record. */
+    private static TypeElement argumentRecord(ExecutableElement method, DocletEnvironment env) {
+        if (method.getParameters().size() != 1) return null;
+        Element type = env.getTypeUtils().asElement(method.getParameters().get(0).asType());
+        if (type instanceof TypeElement te && te.getKind() == ElementKind.RECORD) return te;
+        return null;
     }
 
     private String findActionName(ExecutableElement method) {

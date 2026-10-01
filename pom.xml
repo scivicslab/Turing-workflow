@@ -218,6 +218,26 @@
                             <goal>jar</goal>
                         </goals>
                     </execution>
+                    <execution>
+                        <!-- META-INF/turing-plugin.json for this jar's own actors (OutActor, CalcActor, ...),
+                             read by ActionManifest. The doclet is this project's own class, so it is taken
+                             from target/classes rather than from a repository artifact. -->
+                        <id>generate-plugin-manifest</id>
+                        <goals><goal>javadoc</goal></goals>
+                        <phase>prepare-package</phase>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/plugin-manifest-javadoc</outputDirectory>
+                            <reportOutputDirectory>${project.build.directory}/plugin-manifest-javadoc</reportOutputDirectory>
+                            <doclet>com.scivicslab.pojoactor.doclet.TuringPluginDoclet</doclet>
+                            <docletPath>${project.build.outputDirectory}</docletPath>
+                            <useStandardDocletOptions>false</useStandardDocletOptions>
+                            <additionalOptions>
+                                <additionalOption>-turingOutputDir</additionalOption>
+                                <additionalOption>${project.build.outputDirectory}/META-INF</additionalOption>
+                            </additionalOptions>
+                            <doclint>none</doclint>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
 

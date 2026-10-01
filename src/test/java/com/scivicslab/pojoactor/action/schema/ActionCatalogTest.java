@@ -103,6 +103,46 @@ class ActionCatalogTest {
         }
     }
 
+    @Test
+    void mergesTheManifestProseIntoTheDescription() throws Exception {
+        ActorSystem system = systemWithGreeter();
+        try {
+            ActionSchemaRegistry registry = new ActionSchemaRegistry(
+                    ActionCatalogTest.class.getClassLoader(), "test-action-schemas");
+            ActionManifest manifest = new ActionManifest(
+                    ActionCatalogTest.class.getClassLoader(), "test-turing-plugin.json");
+            assertEquals(2, manifest.size());
+            ActionCatalog catalog = new ActionCatalog(system, registry, manifest);
+            ActionResult r = catalog.callByActionName("describeAction",
+                    "{\"actor\":\"greeter\",\"action\":\"greetTyped\"}");
+            assertTrue(r.isSuccess(), r.getResult());
+            var json = JSON.readTree(r.getResult());
+            assertEquals("Greets the named person.", json.get("description").asText());
+            assertEquals("who to greet", json.get("schema").get("properties").get("name").get("description").asText(),
+                    "the record's @param prose sits on the schema property");
+
+            ActionResult raw = catalog.callByActionName("describeAction",
+                    "{\"actor\":\"greeter\",\"action\":\"greet\"}");
+            var rawJson = JSON.readTree(raw.getResult());
+            assertEquals("Greets whoever the text names.", rawJson.get("description").asText());
+            assertTrue(rawJson.get("schema").isNull());
+            assertEquals("string", rawJson.get("argsFormat").asText(), "with no schema the doclet's guess is still told");
+        } finally {
+            system.terminate();
+        }
+    }
+
+    @Test
+    void describesByClassWithoutARunningActor() {
+        var names = ActionCatalog.actionNamesOf(Greeter.class);
+        assertEquals(java.util.List.of("greet", "greetTyped"), new java.util.ArrayList<>(names));
+        var json = ActionCatalog.describe(Greeter.class, "greetTyped",
+                new ActionSchemaRegistry(ActionCatalogTest.class.getClassLoader(), "test-action-schemas"),
+                new ActionManifest(ActionCatalogTest.class.getClassLoader(), "test-turing-plugin.json"));
+        assertEquals(Greeter.class.getName(), json.get("class").asText());
+        assertTrue(json.get("schema").get("properties").has("name"));
+    }
+
     /**
      * Most actions take a raw String and have no declared shape. Saying so is the answer — a
      * caller that gets "no schema" knows to read the documentation, whereas an empty object

@@ -1,0 +1,12 @@
+{
+  "actors": [
+    {
+      "class": "com.scivicslab.pojoactor.action.schema.ActionCatalogTest$Greeter",
+      "actions": [
+        {"name": "greet", "argsFormat": "string", "description": "Greets whoever the text names."},
+        {"name": "greetTyped", "argsFormat": "object", "description": "Greets the named person.",
+         "params": [{"name": "name", "description": "who to greet"}]}
+      ]
+    }
+  ]
+}

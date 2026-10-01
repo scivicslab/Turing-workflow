@@ -20,6 +20,12 @@ package com.scivicslab.pojoactor.action.schema;
 import java.util.SortedSet;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.scivicslab.pojoactor.action.Action;
+import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.scivicslab.pojoactor.action.ActionDispatcher;
@@ -61,6 +67,7 @@ public class ActionCatalog implements CallableByActionName {
 
     private final ActorSystem actorSystem;
     private final ActionSchemaRegistry schemaRegistry;
+    private final ActionManifest manifest;
 
     /**
      * @param actorSystem    the system whose actors are described — the same one this is
@@ -69,8 +76,16 @@ public class ActionCatalog implements CallableByActionName {
      * @param schemaRegistry the schemas loaded from the classpath
      */
     public ActionCatalog(ActorSystem actorSystem, ActionSchemaRegistry schemaRegistry) {
+        this(actorSystem, schemaRegistry, new ActionManifest(ActionCatalog.class.getClassLoader()));
+    }
+
+    /**
+     * @param manifest the Javadoc prose the doclet wrote into the jars, merged into each description
+     */
+    public ActionCatalog(ActorSystem actorSystem, ActionSchemaRegistry schemaRegistry, ActionManifest manifest) {
         this.actorSystem = actorSystem;
         this.schemaRegistry = schemaRegistry;
+        this.manifest = manifest;
     }
 
     @Override
@@ -109,17 +124,69 @@ public class ActionCatalog implements CallableByActionName {
         if (!new ActionDispatcher(actor).has(action)) {
             return new ActionResult(false, "Actor " + actorName + " has no action " + action);
         }
-        ObjectNode answer = JSON.createObjectNode();
+        ObjectNode answer = describe(actor.getClass(), action, schemaRegistry, manifest);
         answer.put("actor", actorName);
+        return new ActionResult(true, JSON.writeValueAsString(answer));
+    }
+
+    /**
+     * The description of one action of a class: its JSON Schema with the record's {@code @param}
+     * prose as each property's {@code description}, and the action method's first Javadoc sentence as
+     * {@code description}. Static so a caller that knows the class but has no running actor (a
+     * workflow editor before the run) gets the same answer ({@code ActionCatalogWithJavadoc_260930_oo01}).
+     *
+     * @return {@code {"action", "class", "description", "schema", "note"?}}; {@code schema} is null and
+     *         {@code note} says so when the action declares no {@code argsType}
+     */
+    public static ObjectNode describe(Class<?> actorClass, String action,
+                                      ActionSchemaRegistry schemaRegistry, ActionManifest manifest) {
+        ObjectNode answer = JSON.createObjectNode();
         answer.put("action", action);
-        JsonNode schema = schemaRegistry.schemaFor(actor.getClass(), action);
-        answer.set("schema", schema == null ? JSON.nullNode() : schema);
+        answer.put("class", actorClass.getName());
+        ActionManifest.ActionDoc doc = manifest == null ? null : manifest.docFor(actorClass, action);
+        answer.put("description", doc == null ? "" : doc.description());
+        JsonNode schema = schemaRegistry == null ? null : schemaRegistry.schemaFor(actorClass, action);
         if (schema == null) {
             // Not an error: most actions declare no argsType and parse a raw String themselves.
             // Saying so keeps a caller from reading an absent schema as "takes no arguments".
+            answer.set("schema", JSON.nullNode());
             answer.put("note", "This action takes a raw String; its shape is not declared.");
+            if (doc != null && !doc.argsFormat().isEmpty()) answer.put("argsFormat", doc.argsFormat());
+            return answer;
         }
-        return new ActionResult(true, JSON.writeValueAsString(answer));
+        ObjectNode merged = schema.deepCopy();
+        JsonNode props = merged.get("properties");
+        if (doc != null && props instanceof ObjectNode propsNode) {
+            for (Map.Entry<String, String> p : doc.params().entrySet()) {
+                JsonNode prop = propsNode.get(p.getKey());
+                if (prop instanceof ObjectNode propNode && !p.getValue().isEmpty()) {
+                    propNode.put("description", p.getValue());
+                }
+            }
+        }
+        answer.set("schema", merged);
+        return answer;
+    }
+
+    /**
+     * The action names a class declares with {@code @Action}, on itself, its superclasses and its
+     * interfaces, without an instance. For the same caller as {@link #describe}.
+     */
+    public static SortedSet<String> actionNamesOf(Class<?> actorClass) {
+        SortedSet<String> names = new TreeSet<>();
+        Set<Class<?>> seen = new HashSet<>();
+        collectActionNames(actorClass, names, seen);
+        return names;
+    }
+
+    private static void collectActionNames(Class<?> c, SortedSet<String> names, Set<Class<?>> seen) {
+        if (c == null || c == Object.class || !seen.add(c)) return;
+        for (Method m : c.getDeclaredMethods()) {
+            Action a = m.getAnnotation(Action.class);
+            if (a != null) names.add(a.value());
+        }
+        collectActionNames(c.getSuperclass(), names, seen);
+        for (Class<?> i : c.getInterfaces()) collectActionNames(i, names, seen);
     }
 
     /**
