@@ -131,12 +131,16 @@ public class ActionCatalog implements CallableByActionName {
 
     /**
      * The description of one action of a class: its JSON Schema with the record's {@code @param}
-     * prose as each property's {@code description}, and the action method's first Javadoc sentence as
-     * {@code description}. Static so a caller that knows the class but has no running actor (a
-     * workflow editor before the run) gets the same answer ({@code ActionCatalogWithJavadoc_260930_oo01}).
+     * prose as each property's {@code description}, and from the action method's Javadoc the first
+     * sentence as {@code description}, the rest of the body as {@code details} and its first
+     * {@code <pre>} block as {@code example}. Static so a caller that knows the class but has no
+     * running actor (a workflow editor before the run) gets the same answer
+     * ({@code ActionCatalogWithJavadoc_260930_oo01}).
      *
-     * @return {@code {"action", "class", "description", "schema", "note"?}}; {@code schema} is null and
-     *         {@code note} says so when the action declares no {@code argsType}
+     * @return {@code {"action", "class", "description", "details"?, "example"?, "schema", "note"?,
+     *         "argsFormat"?, "argument"?}}; {@code schema} is null and {@code note} says so when the
+     *         action declares no {@code argsType}, and then {@code argument} is the method's own
+     *         {@code @param} line ({@code {"name", "description"}}) when the Javadoc has one
      */
     public static ObjectNode describe(Class<?> actorClass, String action,
                                       ActionSchemaRegistry schemaRegistry, ActionManifest manifest) {
@@ -145,6 +149,8 @@ public class ActionCatalog implements CallableByActionName {
         answer.put("class", actorClass.getName());
         ActionManifest.ActionDoc doc = manifest == null ? null : manifest.docFor(actorClass, action);
         answer.put("description", doc == null ? "" : doc.description());
+        if (doc != null && !doc.details().isEmpty()) answer.put("details", doc.details());
+        if (doc != null && !doc.example().isEmpty()) answer.put("example", doc.example());
         JsonNode schema = schemaRegistry == null ? null : schemaRegistry.schemaFor(actorClass, action);
         if (schema == null) {
             // Not an error: most actions declare no argsType and parse a raw String themselves.
@@ -152,6 +158,14 @@ public class ActionCatalog implements CallableByActionName {
             answer.set("schema", JSON.nullNode());
             answer.put("note", "This action takes a raw String; its shape is not declared.");
             if (doc != null && !doc.argsFormat().isEmpty()) answer.put("argsFormat", doc.argsFormat());
+            // What the method's Javadoc says of its one String parameter is all that is declared of it.
+            if (doc != null && !doc.params().isEmpty()) {
+                Map.Entry<String, String> p = doc.params().entrySet().iterator().next();
+                ObjectNode argument = JSON.createObjectNode();
+                argument.put("name", p.getKey());
+                argument.put("description", p.getValue());
+                answer.set("argument", argument);
+            }
             return answer;
         }
         ObjectNode merged = schema.deepCopy();

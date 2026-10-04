@@ -3,7 +3,10 @@
     {
       "class": "com.scivicslab.pojoactor.action.schema.ActionCatalogTest$Greeter",
       "actions": [
-        {"name": "greet", "argsFormat": "string", "description": "Greets whoever the text names."},
+        {"name": "greet", "argsFormat": "string", "description": "Greets whoever the text names.",
+         "details": "The text is used as is; a blank text greets nobody.",
+         "example": "- actor: greeter\n  method: greet\n  arguments: \"Ada\"",
+         "params": [{"name": "args", "description": "the name to greet, as plain text"}]},
         {"name": "greetTyped", "argsFormat": "object", "description": "Greets the named person.",
          "params": [{"name": "name", "description": "who to greet"}]}
       ]

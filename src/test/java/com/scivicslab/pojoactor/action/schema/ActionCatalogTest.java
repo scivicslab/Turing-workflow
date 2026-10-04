@@ -127,6 +127,12 @@ class ActionCatalogTest {
             assertEquals("Greets whoever the text names.", rawJson.get("description").asText());
             assertTrue(rawJson.get("schema").isNull());
             assertEquals("string", rawJson.get("argsFormat").asText(), "with no schema the doclet's guess is still told");
+            assertEquals("args", rawJson.get("argument").get("name").asText(),
+                    "with no schema the method's own @param is what is declared of the String");
+            assertEquals("the name to greet, as plain text", rawJson.get("argument").get("description").asText());
+            assertEquals("The text is used as is; a blank text greets nobody.", rawJson.get("details").asText());
+            assertTrue(rawJson.get("example").asText().startsWith("- actor: greeter"), rawJson.toString());
+            assertFalse(json.has("example"), "an action whose Javadoc has no <pre> block has no example");
         } finally {
             system.terminate();
         }

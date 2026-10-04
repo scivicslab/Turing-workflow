@@ -18,7 +18,13 @@ package com.scivicslab.pojoactor.doclet;
 
 import com.sun.source.doctree.DocCommentTree;
 import com.sun.source.doctree.DocTree;
+import com.sun.source.doctree.EndElementTree;
+import com.sun.source.doctree.EntityTree;
+import com.sun.source.doctree.LinkTree;
+import com.sun.source.doctree.LiteralTree;
 import com.sun.source.doctree.ParamTree;
+import com.sun.source.doctree.StartElementTree;
+import com.sun.source.doctree.TextTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.util.DocTrees;
 import jdk.javadoc.doclet.Doclet;
@@ -47,9 +53,13 @@ import java.util.stream.Collectors;
 /**
  * Javadoc doclet that generates META-INF/turing-plugin.json from @Action annotated methods.
  *
- * <p>Extracts action names, Javadoc descriptions, and @param tags for each @Action method,
- * writing structured JSON metadata into the JAR's META-INF directory. The Workflow Editor
- * reads this file directly from JAR entries without loading the plugin into the JVM.</p>
+ * <p>Extracts, for each @Action method, the action name, the first sentence of its Javadoc as
+ * {@code description}, the rest of the Javadoc body as {@code details}, the first {@code <pre>}
+ * block of the body as {@code example} (the usage example the author wrote, usually a YAML step),
+ * and the @param tags as {@code params} — the argument record's when the method takes a record,
+ * the method's own otherwise. The JSON goes into the JAR's META-INF directory, where the Workflow
+ * Editor reads it from JAR entries without loading the plugin into the JVM and
+ * {@code ActionCatalog} merges it with the JSON Schemas.</p>
  *
  * <p>Configure in maven-javadoc-plugin:</p>
  * <pre>{@code
@@ -142,12 +152,19 @@ public class TuringPluginDoclet implements Doclet {
 
                 DocCommentTree docTree = docTrees.getDocCommentTree(method);
                 if (docTree != null) {
-                    String description = docTree.getFirstSentence().stream()
-                            .map(Object::toString)
-                            .collect(Collectors.joining(" "))
-                            .trim();
+                    String description = textOf(docTree.getFirstSentence()).trim();
                     if (!description.isEmpty()) {
                         action.put("description", description);
+                    }
+                    // The body after the first sentence: its first <pre> block is the usage example,
+                    // the prose around it the details.
+                    String example = firstPreBlock(docTree.getBody());
+                    if (!example.isEmpty()) {
+                        action.put("example", example);
+                    }
+                    String details = withoutPreBlocks(docTree.getBody());
+                    if (!details.isEmpty()) {
+                        action.put("details", details);
                     }
                 }
                 DocCommentTree paramsTree = argsRecord != null ? docTrees.getDocCommentTree(argsRecord) : docTree;
@@ -235,10 +252,7 @@ public class TuringPluginDoclet implements Doclet {
         List<Map<String, String>> params = new ArrayList<>();
         for (DocTree tag : docTree.getBlockTags()) {
             if (tag instanceof ParamTree paramTag) {
-                String desc = paramTag.getDescription().stream()
-                        .map(Object::toString)
-                        .collect(Collectors.joining(" "))
-                        .trim();
+                String desc = textOf(paramTag.getDescription()).trim();
                 Map<String, String> param = new LinkedHashMap<>();
                 param.put("name", paramTag.getName().toString());
                 param.put("description", desc);
@@ -246,6 +260,106 @@ public class TuringPluginDoclet implements Doclet {
             }
         }
         return params;
+    }
+
+    /**
+     * The plain text of a run of doc trees: inline tags give their content ({@code {@code x}} is
+     * {@code x}, {@code {@link Foo}} is {@code Foo}), entities their character, a {@code <p>} a
+     * paragraph break; other HTML elements are dropped and their content kept.
+     */
+    static String textOf(List<? extends DocTree> trees) {
+        StringBuilder sb = new StringBuilder();
+        for (DocTree tree : trees) {
+            appendText(tree, sb);
+        }
+        // replacement strings read a backslash as an escape, so the newlines are real ones
+        return sb.toString().replaceAll("[ \\t]+\\n", "\n").replaceAll("\\n{3,}", "\n\n");
+    }
+
+    private static void appendText(DocTree tree, StringBuilder sb) {
+        if (tree instanceof TextTree text) {
+            sb.append(text.getBody());
+        } else if (tree instanceof LiteralTree literal) {
+            sb.append(literal.getBody().getBody());
+        } else if (tree instanceof LinkTree link) {
+            if (link.getLabel().isEmpty()) {
+                sb.append(link.getReference().getSignature());
+            } else {
+                for (DocTree t : link.getLabel()) appendText(t, sb);
+            }
+        } else if (tree instanceof EntityTree entity) {
+            sb.append(switch (entity.getName().toString()) {
+                case "lt" -> "<";
+                case "gt" -> ">";
+                case "amp" -> "&";
+                case "quot" -> "\"";
+                case "apos" -> "'";
+                case "nbsp" -> " ";
+                default -> "&" + entity.getName() + ";";
+            });
+        } else if (tree instanceof StartElementTree start) {
+            String name = start.getName().toString().toLowerCase(Locale.ROOT);
+            if (name.equals("p") || name.equals("br") || name.equals("li")) sb.append("\n");
+        } else if (tree instanceof EndElementTree end) {
+            String name = end.getName().toString().toLowerCase(Locale.ROOT);
+            if (name.equals("p") || name.equals("ul") || name.equals("ol")) sb.append("\n");
+        } else {
+            // other inline tags ({@value}, {@inheritDoc}, unknown ones) carry no prose to show
+        }
+    }
+
+    /** The text inside the first {@code <pre>...</pre>} of the trees, trimmed; "" when there is none. */
+    static String firstPreBlock(List<? extends DocTree> trees) {
+        StringBuilder sb = new StringBuilder();
+        boolean inside = false;
+        for (DocTree tree : trees) {
+            if (tree instanceof StartElementTree start && start.getName().toString().equalsIgnoreCase("pre")) {
+                inside = true;
+                continue;
+            }
+            if (tree instanceof EndElementTree end && end.getName().toString().equalsIgnoreCase("pre")) {
+                if (inside) break;
+                continue;
+            }
+            if (inside) appendText(tree, sb);
+        }
+        return stripIndent(sb.toString());
+    }
+
+    /** The text of the trees with every {@code <pre>...</pre>} left out, trimmed. */
+    static String withoutPreBlocks(List<? extends DocTree> trees) {
+        List<DocTree> kept = new ArrayList<>();
+        boolean inside = false;
+        for (DocTree tree : trees) {
+            if (tree instanceof StartElementTree start && start.getName().toString().equalsIgnoreCase("pre")) {
+                inside = true;
+                continue;
+            }
+            if (tree instanceof EndElementTree end && end.getName().toString().equalsIgnoreCase("pre")) {
+                inside = false;
+                continue;
+            }
+            if (!inside) kept.add(tree);
+        }
+        return textOf(kept).trim();
+    }
+
+    /** Removes the common leading indentation of the non-blank lines and the blank edges. */
+    static String stripIndent(String text) {
+        String[] lines = text.replace("\r", "").split("\n", -1);
+        int indent = Integer.MAX_VALUE;
+        for (String line : lines) {
+            if (line.isBlank()) continue;
+            int i = 0;
+            while (i < line.length() && line.charAt(i) == ' ') i++;
+            indent = Math.min(indent, i);
+        }
+        if (indent == Integer.MAX_VALUE) return "";
+        StringBuilder sb = new StringBuilder();
+        for (String line : lines) {
+            sb.append(line.isBlank() ? "" : line.substring(indent)).append('\n');
+        }
+        return sb.toString().strip();
     }
 
     private boolean writeJson(List<Map<String, Object>> actors) {
@@ -284,6 +398,12 @@ public class TuringPluginDoclet implements Doclet {
                 if (action.containsKey("description")) {
                     sb.append(",\n          \"description\": ").append(quoted(action.get("description").toString()));
                 }
+                if (action.containsKey("details")) {
+                    sb.append(",\n          \"details\": ").append(quoted(action.get("details").toString()));
+                }
+                if (action.containsKey("example")) {
+                    sb.append(",\n          \"example\": ").append(quoted(action.get("example").toString()));
+                }
 
                 if (action.containsKey("params")) {
                     List<Map<String, String>> params = (List<Map<String, String>>) action.get("params");
@@ -310,13 +430,12 @@ public class TuringPluginDoclet implements Doclet {
         return sb.toString();
     }
 
+    /** JSON string literal; the inline tags were turned into text by {@link #textOf}, so braces stay. */
     private String quoted(String s) {
         return "\"" + s.replace("\\", "\\\\")
                        .replace("\"", "\\\"")
+                       .replace("\t", "\\t")
                        .replace("\n", "\\n")
-                       .replace("\r", "")
-                       .replace("{@code ", "")
-                       .replace("{@link ", "")
-                       .replace("}", "") + "\"";
+                       .replace("\r", "") + "\"";
     }
 }

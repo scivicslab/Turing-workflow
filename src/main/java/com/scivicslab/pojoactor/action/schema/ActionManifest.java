@@ -16,9 +16,11 @@ import java.util.logging.Logger;
 /**
  * The prose about actions that {@code TuringPluginDoclet} wrote at build time into each jar's
  * {@code META-INF/turing-plugin.json}: for every {@code @Action} method, the first sentence of its
- * Javadoc and the {@code @param} descriptions of its argument record. Read from every jar on the
- * classpath, keyed by fully-qualified class name and action name, the same key the JSON Schemas use,
- * so {@link ActionCatalog} can answer both in one description ({@code ActionCatalogWithJavadoc_260930_oo01}).
+ * Javadoc, the rest of the body, the first {@code <pre>} block as the usage example, and the
+ * {@code @param} descriptions — of its argument record, or of the method's own String parameter.
+ * Read from every jar on the classpath, keyed by fully-qualified class name and action name, the same
+ * key the JSON Schemas use, so {@link ActionCatalog} can answer both in one description
+ * ({@code ActionCatalogWithJavadoc_260930_oo01}).
  */
 public class ActionManifest {
 
@@ -32,10 +34,14 @@ public class ActionManifest {
      * What the manifest says about one action.
      *
      * @param description the first sentence of the action method's Javadoc; "" when it has none
-     * @param params      field name to its description, in declaration order; empty when none
+     * @param details     the Javadoc body after the first sentence, without its {@code <pre>} blocks; "" when none
+     * @param example     the first {@code <pre>} block of the Javadoc body, the author's usage example; "" when none
+     * @param params      field name to its description, in declaration order: the argument record's
+     *                    components, or the method's own parameter for a raw-String action; empty when none
      * @param argsFormat  the doclet's guess at the argument form ({@code string}, {@code object}, ...)
      */
-    public record ActionDoc(String description, Map<String, String> params, String argsFormat) {}
+    public record ActionDoc(String description, String details, String example,
+                            Map<String, String> params, String argsFormat) {}
 
     private final Map<String, ActionDoc> docs = new ConcurrentHashMap<>();
 
@@ -89,6 +95,8 @@ public class ActionManifest {
                 }
                 docs.putIfAbsent(className + "." + name, new ActionDoc(
                         action.path("description").asText(""),
+                        action.path("details").asText(""),
+                        action.path("example").asText(""),
                         Collections.unmodifiableMap(params),
                         action.path("argsFormat").asText("")));
             }
