@@ -41,7 +41,8 @@ class TuringPluginDocletTest {
                 /**
                  * Greets whoever the text names; the message is the greeting.
                  *
-                 * <p>The text is used as is. A {@code blank} text greets nobody, see {@link #wave}.</p>
+                 * <p>The text is used as is. A {@code blank} text greets nobody,
+                 * see {@link #wave}.</p>
                  *
                  * <pre>{@code
                  * - actor: greeter
@@ -86,7 +87,7 @@ class TuringPluginDocletTest {
         assertEquals("string", greet.get("argsFormat").asText());
         assertEquals("Greets whoever the text names; the message is the greeting.", greet.get("description").asText());
         assertEquals("The text is used as is. A blank text greets nobody, see #wave.", greet.get("details").asText(),
-                "inline tags become their text, the <pre> block is not part of the details");
+                "inline tags become their text, the source's line wrap is not a break, the <pre> block is not part of the details");
         assertEquals("- actor: greeter\n  method: greet\n  arguments: \"Ada <ada@example.org>\"", greet.get("example").asText(),
                 "the <pre>{@code ...}</pre> block, unindented, with its braces and angle brackets intact");
         assertEquals("args", greet.get("params").get(0).get("name").asText());

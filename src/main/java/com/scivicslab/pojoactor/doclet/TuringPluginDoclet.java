@@ -314,8 +314,14 @@ public class TuringPluginDoclet implements Doclet {
         for (DocTree tree : trees) {
             appendText(tree, sb);
         }
-        // replacement strings read a backslash as an escape, so the newlines are real ones
-        return sb.toString().replaceAll("[ \\t]+\\n", "\n").replaceAll("\\n{3,}", "\n\n");
+        // A Javadoc paragraph is wrapped at the source's line width; those line breaks are not
+        // prose, so a single newline becomes a space and only a blank line keeps a break. The text
+        // inside <pre> never comes through here (firstPreBlock appends it directly).
+        // Replacement strings read a backslash as an escape, so the newlines are real ones.
+        return sb.toString()
+                .replaceAll("[ \\t]+\\n", "\n")
+                .replaceAll("\\n{3,}", "\n\n")
+                .replaceAll("(?<!\\n)\\n(?!\\n)[ \\t]*", " ");
     }
 
     private static void appendText(DocTree tree, StringBuilder sb) {
