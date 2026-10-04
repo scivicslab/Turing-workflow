@@ -26,24 +26,22 @@ import java.util.concurrent.ExecutionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * Interpreter-interfaced actor reference for {@link Interpreter} instances.
  *
  * <p>This class provides a concrete implementation of {@link IIActorRef}
- * specifically for {@link Interpreter} objects. It handles action invocations
- * by name, supporting actions such as reading YAML/JSON workflow definitions
- * and executing workflow code.</p>
+ * specifically for {@link Interpreter} objects. A workflow reaches it as {@code this} (also
+ * {@code interpreter}): the actions below are the engine's own — conditions, sub-workflows,
+ * the current state — and, inherited from {@link IIActorRef}, the JSON State actions
+ * ({@code putJson}, {@code appendJson}, {@code getJson}, {@code hasJson}, {@code clearJson},
+ * {@code printJson}). Each is one {@code @Action} method, so the doclet documents it and a
+ * caller can list it without a run.</p>
  *
- * <p>Supported actions include:</p>
- * <ul>
- * <li>{@code execCode} - Executes the loaded workflow code</li>
- * <li>{@code readYaml} - Reads a YAML workflow definition from a file path</li>
- * <li>{@code readJson} - Reads a JSON workflow definition from a file path</li>
- * <li>{@code setCurrentState} - Sets the interpreter's current state to the specified value</li>
- * <li>{@code doNothing} - No-op action; returns success immediately without doing anything</li>
- * </ul>
+ * <p>A bare string under {@code arguments:} reaches an action as a JSON array of one element;
+ * the actions that take one value therefore accept both the bare text and the array.</p>
  *
  * @author devteam@scivicslab.com
  */
@@ -77,124 +75,268 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
     }
 
     /**
-     * Invokes an action on the interpreter by name with the given arguments.
+     * Runs the loaded workflow code once from its current state; the message is the engine's result.
      *
-     * <p>This method handles the following actions:</p>
-     * <ul>
-     * <li>{@code execCode} - Executes the workflow code and returns the result</li>
-     * <li>{@code readYaml} - Reads a YAML file from the path specified in {@code arg}</li>
-     * <li>{@code readJson} - Reads a JSON file from the path specified in {@code arg}</li>
-     * </ul>
+     * <p>For a workflow that drives another interpreter it created. A workflow does not call it on
+     * itself.</p>
      *
-     * @param actionName the name of the action to execute
-     * @param arg the argument string (typically a file path for read operations)
-     * @return an {@link ActionResult} indicating success or failure with a message
+     * <pre>{@code
+     * - actor: child
+     *   method: execCode
+     * }</pre>
+     *
+     * @param args ignored
      */
-    @Override
-    public ActionResult callByActionName(String actionName, String arg) {
+    @Action("execCode")
+    public ActionResult execCode(String args) {
+        return asked("execCode", args, i -> i.execCode());
+    }
 
-        logger.fine(String.format("actionName = %s, args = %s", actionName, arg));
-
-        boolean success = false;
-        String message = "";
-
-        try {
-            if (actionName.equals("execCode")) {
-                ActionResult result = this.ask((Interpreter i) -> i.execCode(), this.system().getManagedThreadPool()).get();
-                return result;
-            }
-            else if (actionName.equals("runUntilEnd")) {
-                // Parse optional maxIterations argument
-                int maxIterations = 10000;
-                if (arg != null && !arg.isEmpty() && !arg.equals("[]")) {
-                    try {
-                        org.json.JSONArray args = new org.json.JSONArray(arg);
-                        if (args.length() > 0) {
-                            maxIterations = args.getInt(0);
-                        }
-                    } catch (Exception e) {
-                        // Use default if parsing fails
-                    }
+    /**
+     * Runs the loaded workflow until it reaches the {@code end} state; the message is the engine's
+     * result.
+     *
+     * <p>Stops after {@code maxIterations} transitions when the workflow has not ended, so a loop
+     * that never ends cannot run forever; 10000 when not given. For a workflow that drives another
+     * interpreter; {@code call} and {@code runWorkflow} do this for a sub-workflow in one step.</p>
+     *
+     * <pre>{@code
+     * - actor: child
+     *   method: runUntilEnd
+     *   arguments: [50]
+     * }</pre>
+     *
+     * @param args a JSON array whose first element is {@code maxIterations}; empty for the default
+     */
+    @Action("runUntilEnd")
+    public ActionResult runUntilEnd(String args) {
+        int maxIterations = 10000;
+        if (args != null && !args.isEmpty() && !args.equals("[]")) {
+            try {
+                org.json.JSONArray array = new org.json.JSONArray(args);
+                if (array.length() > 0) {
+                    maxIterations = array.getInt(0);
                 }
-                final int iterations = maxIterations;
-                ActionResult result = this.ask((Interpreter i) -> i.runUntilEnd(iterations), this.system().getManagedThreadPool()).get();
-                return result;
-            }
-            else if (actionName.equals("call")) {
-                // Subworkflow call (creates child actor)
-                org.json.JSONArray args = new org.json.JSONArray(arg);
-                String workflowFile = args.getString(0);
-                ActionResult result = this.ask((Interpreter i) -> i.call(workflowFile), this.system().getManagedThreadPool()).get();
-                return result;
-            }
-            else if (actionName.equals("runWorkflow")) {
-                // Load and run workflow directly (no child actor)
-                org.json.JSONArray args = new org.json.JSONArray(arg);
-                String workflowFile = args.getString(0);
-                int maxIterations = args.length() > 1 ? args.getInt(1) : 10000;
-                ActionResult result = this.ask((Interpreter i) -> i.runWorkflow(workflowFile, maxIterations), this.system().getManagedThreadPool()).get();
-                return result;
-            }
-            else if (actionName.equals("apply")) {
-                // Apply action to child actors
-                ActionResult result = this.ask((Interpreter i) -> i.apply(arg), this.system().getManagedThreadPool()).get();
-                return result;
-            }
-            else if (actionName.equals("readYaml")) {
-                try (InputStream input = new FileInputStream(new File(arg))) {
-                    this.tell((Interpreter i) -> i.readYaml(input)).get();
-                    success = true;
-                    message = "YAML loaded successfully";
-                } catch (FileNotFoundException e) {
-                    logger.log(Level.SEVERE, String.format("file not found: %s", arg), e);
-                    message = "File not found: " + arg;
-                } catch (IOException e) {
-                    logger.log(Level.SEVERE, String.format("IOException: %s", arg), e);
-                    message = "IO error: " + arg;
-                }
-            } else if (actionName.equals("sleep")) {
-                try {
-                    long millis = Long.parseLong(arg);
-                    Thread.sleep(millis);
-                    success = true;
-                    message = "Slept for " + millis + "ms";
-                } catch (NumberFormatException e) {
-                    logger.log(Level.SEVERE, String.format("Invalid sleep duration: %s", arg), e);
-                    message = "Invalid sleep duration: " + arg;
-                }
-            } else if (actionName.equals("print")) {
-                System.out.println(arg);
-                success = true;
-                message = "Printed: " + arg;
-            } else if (actionName.equals("onlyIf")) {
-                return onlyIf(arg);
-            } else if (actionName.equals("doNothing")) {
-                success = true;
-                message = arg;
-            } else if (actionName.equals("setCurrentState")) {
-                String targetState = arg;
-                if (arg != null && arg.startsWith("[")) {
-                    org.json.JSONArray args = new org.json.JSONArray(arg);
-                    targetState = args.length() > 0 ? args.getString(0) : arg;
-                }
-                final String state = targetState;
-                this.tell((Interpreter i) -> i.setCurrentState(state)).get();
-                success = true;
-                message = "currentState set to: " + state;
-            } else {
-                // Delegate to parent for JSON State API and other common actions
-                return super.callByActionName(actionName, arg);
+            } catch (Exception e) {
+                // not a number: the default stands
             }
         }
-        catch (InterruptedException e) {
-            logger.log(Level.SEVERE, String.format("actionName = %s, args = %s", actionName, arg), e);
-            message = "Interrupted";
+        final int iterations = maxIterations;
+        return asked("runUntilEnd", args, i -> i.runUntilEnd(iterations));
+    }
+
+    /**
+     * Runs a sub-workflow file to its end in a child interpreter, then removes the child; the
+     * message is the sub-workflow's result.
+     *
+     * <p>The child shares this actor system, so the sub-workflow can call every registered actor.
+     * The file is resolved as {@link Interpreter#call(String)} resolves it.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: call
+     *   arguments: ["sub-workflow.yaml"]
+     * }</pre>
+     *
+     * @param args a JSON array whose first element is the workflow file
+     */
+    @Action("call")
+    public ActionResult call(String args) {
+        String workflowFile = parseFirstArgument(args);
+        return asked("call", args, i -> i.call(workflowFile));
+    }
+
+    /**
+     * Loads a workflow file into this interpreter and runs it to its end, without a child; the
+     * message is the result.
+     *
+     * <p>Replaces the workflow this interpreter was running, so it is for an interpreter that
+     * {@code apply} drives, not for a workflow to call on itself.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: apply
+     *   arguments:
+     *     actor: "node-*"
+     *     method: runWorkflow
+     *     arguments: ["task.yaml"]
+     * }</pre>
+     *
+     * @param args a JSON array: the workflow file, then optionally {@code maxIterations}
+     */
+    @Action("runWorkflow")
+    public ActionResult runWorkflow(String args) {
+        org.json.JSONArray array = new org.json.JSONArray(args);
+        String workflowFile = array.getString(0);
+        int maxIterations = array.length() > 1 ? array.getInt(1) : 10000;
+        return asked("runWorkflow", args, i -> i.runWorkflow(workflowFile, maxIterations));
+    }
+
+    /**
+     * Calls one action on the child actors whose names match a pattern; the message is the combined
+     * result.
+     *
+     * <p>{@code *} is all children, {@code node-*} those starting with {@code node-}. Unlike
+     * {@code call}, the children stay.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: apply
+     *   arguments:
+     *     actor: "Species-*"
+     *     method: mutate
+     *     arguments: [0.05, 0.02, 0.5]
+     * }</pre>
+     *
+     * @param args {@code {"actor": "<pattern>", "method": "<action>", "arguments": <any>}}
+     */
+    @Action("apply")
+    public ActionResult apply(String args) {
+        return asked("apply", args, i -> i.apply(args));
+    }
+
+    /**
+     * Loads a YAML workflow file into this interpreter without running it.
+     *
+     * <pre>{@code
+     * - actor: child
+     *   method: readYaml
+     *   arguments: "sub-workflow.yaml"
+     * }</pre>
+     *
+     * @param args the file path, as a bare string or as the first element of a JSON array
+     */
+    @Action("readYaml")
+    public ActionResult readYaml(String args) {
+        String path = parseFirstArgument(args);
+        try (InputStream input = new FileInputStream(new File(path))) {
+            this.tell((Interpreter i) -> i.readYaml(input)).get();
+            return new ActionResult(true, "YAML loaded successfully");
+        } catch (FileNotFoundException e) {
+            logger.log(Level.SEVERE, String.format("file not found: %s", path), e);
+            return new ActionResult(false, "File not found: " + path);
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, String.format("IOException: %s", path), e);
+            return new ActionResult(false, "IO error: " + path);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new ActionResult(false, "Interrupted");
         } catch (ExecutionException e) {
-            logger.log(Level.SEVERE, String.format("actionName = %s, args = %s", actionName, arg), e);
-            message = "Execution error";
+            logger.log(Level.SEVERE, String.format("readYaml: %s", path), e);
+            return new ActionResult(false, "Execution error");
         }
+    }
 
-        return new ActionResult(success, message);
+    /**
+     * Pauses the workflow for a number of milliseconds.
+     *
+     * <p>For spacing retries within one run. A retry that goes through the prompt queue is spaced
+     * with the transition's {@code delay:} instead.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: sleep
+     *   arguments: "1000"
+     * }</pre>
+     *
+     * @param args the milliseconds, as a bare number or as the first element of a JSON array
+     */
+    @Action("sleep")
+    public ActionResult sleep(String args) {
+        String text = parseFirstArgument(args);
+        try {
+            long millis = Long.parseLong(text.strip());
+            Thread.sleep(millis);
+            return new ActionResult(true, "Slept for " + millis + "ms");
+        } catch (NumberFormatException e) {
+            logger.log(Level.SEVERE, String.format("Invalid sleep duration: %s", text), e);
+            return new ActionResult(false, "Invalid sleep duration: " + text);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new ActionResult(false, "Interrupted");
+        }
+    }
+
+    /**
+     * Prints a line to standard output; the message repeats it.
+     *
+     * <p>For a note in the run's log, such as a catch-all transition saying why the run stopped.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: print
+     *   arguments: "explain-approve-implement: rejected — stopped."
+     * }</pre>
+     *
+     * @param args the text, as a bare string or as the first element of a JSON array
+     */
+    @Action("print")
+    public ActionResult print(String args) {
+        String text = parseFirstArgument(args);
+        System.out.println(text);
+        return new ActionResult(true, "Printed: " + text);
+    }
+
+    /**
+     * Does nothing and succeeds; the message is the argument text.
+     *
+     * <p>For a transition that only changes state, or a placeholder while a workflow is written.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: doNothing
+     *   arguments: ["setup-1"]
+     * }</pre>
+     *
+     * @param args any text, repeated as the message
+     */
+    @Action("doNothing")
+    public ActionResult doNothing(String args) {
+        return new ActionResult(true, parseFirstArgument(args));
+    }
+
+    /**
+     * Moves this interpreter to a state by name; the next transition is chosen from there.
+     *
+     * <p>A jump the transitions table did not write. For a workflow driving another interpreter,
+     * or to reset a loop.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: setCurrentState
+     *   arguments: "retry"
+     * }</pre>
+     *
+     * @param args the state name, as a bare string or as the first element of a JSON array
+     */
+    @Action("setCurrentState")
+    public ActionResult setCurrentState(String args) {
+        final String state = parseFirstArgument(args);
+        try {
+            this.tell((Interpreter i) -> i.setCurrentState(state)).get();
+            return new ActionResult(true, "currentState set to: " + state);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new ActionResult(false, "Interrupted");
+        } catch (ExecutionException e) {
+            logger.log(Level.SEVERE, String.format("setCurrentState: %s", state), e);
+            return new ActionResult(false, "Execution error");
+        }
+    }
+
+    /** Asks the interpreter on the managed pool and turns the two wait failures into results. */
+    private ActionResult asked(String actionName, String args,
+                               java.util.function.Function<Interpreter, ActionResult> work) {
+        try {
+            return this.ask(work, this.system().getManagedThreadPool()).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.log(Level.SEVERE, String.format("actionName = %s, args = %s", actionName, args), e);
+            return new ActionResult(false, "Interrupted");
+        } catch (ExecutionException e) {
+            logger.log(Level.SEVERE, String.format("actionName = %s, args = %s", actionName, args), e);
+            return new ActionResult(false, "Execution error");
+        }
     }
 
     /**
@@ -220,7 +362,8 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *            expression answered
      * @return success when the condition holds, failure when it does not or was never a condition
      */
-    private ActionResult onlyIf(String arg) {
+    @Action("onlyIf")
+    public ActionResult onlyIf(String arg) {
         Object value = singleArgument(arg);
         if (Boolean.TRUE.equals(value)) {
             return new ActionResult(true, "onlyIf holds");

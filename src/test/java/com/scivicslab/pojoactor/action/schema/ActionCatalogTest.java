@@ -138,6 +138,22 @@ class ActionCatalogTest {
         }
     }
 
+    /** An actor that inherits its actions. */
+    public static class PoliteGreeter extends Greeter {}
+
+    /**
+     * The JSON State actions are declared once on IIActorRef and dispatched on every subclass, so
+     * the prose the doclet wrote under the declaring class must be found from the subclass.
+     */
+    @Test
+    void findsTheProseOfAnInheritedAction() {
+        ActionManifest manifest = new ActionManifest(ActionCatalogTest.class.getClassLoader(), "test-turing-plugin.json");
+        assertEquals("Greets whoever the text names.", manifest.docFor(PoliteGreeter.class, "greet").description());
+        var json = ActionCatalog.describe(PoliteGreeter.class, "greet", new ActionSchemaRegistry(), manifest);
+        assertEquals("args", json.get("argument").get("name").asText());
+        assertTrue(ActionCatalog.actionNamesOf(PoliteGreeter.class).contains("greetTyped"));
+    }
+
     @Test
     void describesByClassWithoutARunningActor() {
         var names = ActionCatalog.actionNamesOf(Greeter.class);

@@ -103,9 +103,23 @@ public class ActionManifest {
         }
     }
 
-    /** @return what the manifest says about the action, or null when no jar documented it */
+    /**
+     * What the manifest says about the action, looked up on the class, then on its superclasses and
+     * interfaces: an {@code @Action} method is dispatched wherever in the hierarchy it is declared,
+     * and the doclet wrote its prose under the declaring class.
+     *
+     * @return the doc, or null when no jar documented the action anywhere in the hierarchy
+     */
     public ActionDoc docFor(Class<?> actorClass, String actionName) {
-        return docFor(actorClass.getName(), actionName);
+        for (Class<?> c = actorClass; c != null && c != Object.class; c = c.getSuperclass()) {
+            ActionDoc doc = docFor(c.getName(), actionName);
+            if (doc != null) return doc;
+            for (Class<?> i : c.getInterfaces()) {
+                doc = docFor(i.getName(), actionName);
+                if (doc != null) return doc;
+            }
+        }
+        return null;
     }
 
     /** Same as {@link #docFor(Class, String)}, keyed by the class's fully-qualified name. */

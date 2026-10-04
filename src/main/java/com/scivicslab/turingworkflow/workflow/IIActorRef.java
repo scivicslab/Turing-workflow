@@ -186,15 +186,11 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     /**
      * Invokes an action by name on this actor.
      *
-     * <p>This method uses a three-stage dispatch mechanism:</p>
-     * <ol>
-     *   <li><strong>@Action annotation:</strong> Checks the IIActorRef subclass for methods
-     *       annotated with {@link Action} matching the action name. This keeps the POJO
-     *       clean - only the IIActorRef adapter needs workflow-related code.</li>
-     *   <li><strong>Built-in JSON State API:</strong> Handles putJson, appendJson, getJson,
-     *       hasJson, clearJson, and printJson actions.</li>
-     *   <li><strong>Unknown action:</strong> Returns failure for unrecognized actions.</li>
-     * </ol>
+     * <p>The action is the public method annotated {@link Action @Action} with that name, on the
+     * IIActorRef subclass or on this class: the six JSON State actions (putJson, appendJson,
+     * getJson, hasJson, clearJson, printJson) are such methods here, so every actor has them and
+     * the doclet documents them once. This keeps the POJO clean - only the IIActorRef adapter
+     * needs workflow-related code. A name no method carries is a failure.</p>
      *
      * <p><strong>DO NOT OVERRIDE THIS METHOD.</strong> Use {@link Action @Action} annotation
      * on your methods instead. The {@code @Action} annotation provides cleaner, more
@@ -233,29 +229,33 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
      */
     @Override
     public ActionResult callByActionName(String actionName, String args) {
-        // Stage 1: Try @Action annotated methods on the wrapped object
-        ActionResult annotatedResult = invokeAnnotatedAction(actionName, args);
-        if (annotatedResult != null) {
-            return annotatedResult;
+        ActionResult result = invokeAnnotatedAction(actionName, args);
+        if (result != null) {
+            return result;
         }
-
-        // Stage 2: Built-in JSON State API actions
-        return switch (actionName) {
-            case "putJson" -> handlePutJson(args);
-            case "appendJson" -> handleAppendJson(args);
-            case "getJson" -> handleGetJson(args);
-            case "hasJson" -> handleHasJson(args);
-            case "clearJson" -> handleClearJson();
-            case "printJson" -> handlePrintJson();
-            default -> new ActionResult(false, "Unknown action: " + actionName);
-        };
+        return new ActionResult(false, "Unknown action: " + actionName);
     }
 
     /**
-     * Handles putJson action.
-     * Expected args: {"path": "key.path", "value": <any>}
+     * Stores one value in this actor's JSON state; the message names the path and the value.
+     *
+     * <p>Every actor has this action; a workflow usually calls it on itself as {@code this.putJson}
+     * to keep what an earlier action answered. {@code value} may be any JSON value; written as a
+     * {@code jexl:} expression it reaches the state with the type the expression answers, and
+     * {@code result} in that expression is the previous action's message. An object or a list is
+     * stored as structure, so a later path can reach its fields. A path that does not exist yet is
+     * created; {@code items[2]} writes that index.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: putJson
+     *   arguments: {path: judge.verdict, value: "jexl: result"}
+     * }</pre>
+     *
+     * @param args {@code {"path": "key.path", "value": <any>}}
      */
-    private ActionResult handlePutJson(String args) {
+    @Action("putJson")
+    public ActionResult handlePutJson(String args) {
         try {
             JSONObject json = new JSONObject(args);
             String path = json.getString("path");
@@ -268,17 +268,24 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     }
 
     /**
-     * Handles appendJson action: adds one value to the end of the list at a path.
-     * Expected args: {"path": "key.path", "value": &lt;any&gt;}
+     * Adds one value to the end of the list at a path in this actor's JSON state.
      *
      * <p>The one list operation {@code putJson} cannot do. {@code putJson} writes the index it is
      * given ({@code items[2]}), and a workflow cannot compute that index into the path, so adding
-     * to the end needed an action of its own ({@code ActorsAsVariables_260914_oo01}).</p>
+     * to the end needed an action of its own ({@code ActorsAsVariables_260914_oo01}). A path holding
+     * nothing becomes a list of one. A path holding anything that is not a list is refused rather
+     * than overwritten.</p>
      *
-     * <p>A path holding nothing becomes a list of one. A path holding anything that is not a list
-     * is refused rather than overwritten.</p>
+     * <pre>{@code
+     * - actor: this
+     *   method: appendJson
+     *   arguments: {path: items, value: "alpha"}
+     * }</pre>
+     *
+     * @param args {@code {"path": "key.path", "value": <any>}}
      */
-    private ActionResult handleAppendJson(String args) {
+    @Action("appendJson")
+    public ActionResult handleAppendJson(String args) {
         try {
             JSONObject json = new JSONObject(args);
             String path = json.getString("path");
@@ -314,10 +321,23 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     }
 
     /**
-     * Handles getJson action.
-     * Expected args: ["path"] or "path"
+     * Reads one value from this actor's JSON state; the message is the value as text, "" when the
+     * path holds nothing.
+     *
+     * <p>In a {@code jexl:} expression the state is read directly as
+     * {@code state.getString('key.path')}; this action is for storing the value as the previous
+     * message, or for a caller in another process.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: getJson
+     *   arguments: "judge.verdict"
+     * }</pre>
+     *
+     * @param args the path, as a bare string or as the first element of a JSON array
      */
-    private ActionResult handleGetJson(String args) {
+    @Action("getJson")
+    public ActionResult handleGetJson(String args) {
         try {
             String path = parseFirstArgument(args);
             String value = getJsonString(path);
@@ -328,10 +348,22 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     }
 
     /**
-     * Handles hasJson action.
-     * Expected args: ["path"] or "path"
+     * Tells whether a path holds a value in this actor's JSON state; the message is {@code true} or
+     * {@code false}.
+     *
+     * <p>The answer is a fact about the data, so the action succeeds either way: store the message
+     * and decide with {@code onlyIf}, or read {@code state.has('key.path')} in the condition directly.</p>
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: hasJson
+     *   arguments: "items"
+     * }</pre>
+     *
+     * @param args the path, as a bare string or as the first element of a JSON array
      */
-    private ActionResult handleHasJson(String args) {
+    @Action("hasJson")
+    public ActionResult handleHasJson(String args) {
         try {
             String path = parseFirstArgument(args);
             boolean exists = hasJson(path);
@@ -342,17 +374,34 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     }
 
     /**
-     * Handles clearJson action.
+     * Empties this actor's JSON state.
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: clearJson
+     * }</pre>
+     *
+     * @param args ignored
      */
-    private ActionResult handleClearJson() {
+    @Action("clearJson")
+    public ActionResult handleClearJson(String args) {
         clearJsonState();
         return new ActionResult(true, "JSON state cleared");
     }
 
     /**
-     * Handles printJson action.
+     * Prints this actor's JSON state to standard output, for reading a run's values while writing
+     * the workflow.
+     *
+     * <pre>{@code
+     * - actor: this
+     *   method: printJson
+     * }</pre>
+     *
+     * @param args ignored
      */
-    private ActionResult handlePrintJson() {
+    @Action("printJson")
+    public ActionResult handlePrintJson(String args) {
         System.out.println(json().toPrettyString());
         return new ActionResult(true, "Printed JSON state");
     }
