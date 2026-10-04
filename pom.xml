@@ -219,9 +219,11 @@
                         </goals>
                     </execution>
                     <execution>
-                        <!-- META-INF/turing-plugin.json for this jar's own actors (OutActor, CalcActor, ...),
-                             read by ActionManifest. The doclet is this project's own class, so it is taken
-                             from target/classes rather than from a repository artifact. -->
+                        <!-- This jar's action manifest (OutActor, CalcActor, InterpreterIIAR, the JSON State
+                             actions of IIActorRef, ...), read by ActionManifest. The resource name is the
+                             jar's own and a services-file index names it, so an uber-jar that holds several
+                             such jars keeps all of them. The doclet is this project's own class, so it is
+                             taken from target/classes rather than from a repository artifact. -->
                         <id>generate-plugin-manifest</id>
                         <goals><goal>javadoc</goal></goals>
                         <phase>prepare-package</phase>
@@ -232,8 +234,10 @@
                             <docletPath>${project.build.outputDirectory}</docletPath>
                             <useStandardDocletOptions>false</useStandardDocletOptions>
                             <additionalOptions>
-                                <additionalOption>-turingOutputDir</additionalOption>
-                                <additionalOption>${project.build.outputDirectory}/META-INF</additionalOption>
+                                <additionalOption>-turingClassesDir</additionalOption>
+                                <additionalOption>${project.build.outputDirectory}</additionalOption>
+                                <additionalOption>-turingManifestResource</additionalOption>
+                                <additionalOption>META-INF/turing-plugin/${project.groupId}.${project.artifactId}.json</additionalOption>
                             </additionalOptions>
                             <doclint>none</doclint>
                         </configuration>

@@ -21,14 +21,23 @@ import java.util.logging.Logger;
  * Read from every jar on the classpath, keyed by fully-qualified class name and action name, the same
  * key the JSON Schemas use, so {@link ActionCatalog} can answer both in one description
  * ({@code ActionCatalogWithJavadoc_260930_oo01}).
+ *
+ * <p>Two places are read. The index {@value #INDEX_RESOURCE} — a services file, which an uber-jar
+ * builder concatenates from every jar instead of keeping one — names each jar's own manifest
+ * resource, and every one named is read. {@value #DEFAULT_RESOURCE} is read as well, for jars whose
+ * doclet run wrote the one shared name; in an uber-jar only one of those survives.</p>
  */
 public class ActionManifest {
 
     private static final Logger logger = Logger.getLogger(ActionManifest.class.getName());
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** The resource every jar carries when its build ran the doclet. */
+    /** The resource every jar carries when its build ran the doclet with the shared name. */
     public static final String DEFAULT_RESOURCE = "META-INF/turing-plugin.json";
+
+    /** The services file whose lines name each jar's own manifest resource. */
+    public static final String INDEX_RESOURCE =
+            "META-INF/services/com.scivicslab.pojoactor.action.schema.ActionManifestSource";
 
     /**
      * What the manifest says about one action.
@@ -57,10 +66,40 @@ public class ActionManifest {
 
     /**
      * @param classLoader  where to look
-     * @param resourceName the resource name to read, for tests that keep a manifest apart
+     * @param resourceName the resource name to read, for tests that keep a manifest apart; when it is
+     *                     {@value #DEFAULT_RESOURCE} the index is read as well
      */
     public ActionManifest(ClassLoader classLoader, String resourceName) {
+        if (DEFAULT_RESOURCE.equals(resourceName)) {
+            addIndexed(classLoader);
+        }
         addFrom(classLoader, resourceName);
+    }
+
+    /** Reads every manifest the index names; returns how many actions were added. */
+    public int addIndexed(ClassLoader classLoader) {
+        int before = docs.size();
+        java.util.Set<String> named = new java.util.LinkedHashSet<>();
+        try {
+            Enumeration<URL> urls = classLoader.getResources(INDEX_RESOURCE);
+            while (urls.hasMoreElements()) {
+                URL url = urls.nextElement();
+                try (InputStream in = url.openStream()) {
+                    for (String line : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
+                        String name = line.strip();
+                        if (!name.isEmpty() && !name.startsWith("#")) named.add(name);
+                    }
+                } catch (Exception e) {
+                    logger.log(Level.WARNING, "Could not read action manifest index " + url, e);
+                }
+            }
+        } catch (Exception e) {
+            logger.log(Level.WARNING, "Could not list action manifest indexes", e);
+        }
+        for (String name : named) {
+            addFrom(classLoader, name);
+        }
+        return docs.size() - before;
     }
 
     /** Reads every {@code resourceName} visible to {@code classLoader}; returns how many actions were added. */

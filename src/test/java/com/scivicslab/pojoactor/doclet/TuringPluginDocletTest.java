@@ -98,4 +98,33 @@ class TuringPluginDocletTest {
         assertFalse(wave.has("example"));
         assertFalse(wave.has("params"));
     }
+
+    /**
+     * With a resource name of its own the manifest survives an uber-jar merge, and the services-file
+     * index tells {@code ActionManifest} where it is.
+     */
+    @Test
+    void ownResourceNameAndTheIndexLine(@TempDir Path dir) throws Exception {
+        Path src = dir.resolve("sample/Greeter.java");
+        Files.createDirectories(src.getParent());
+        Files.writeString(src, SOURCE);
+        Path classes = dir.resolve("classes");
+
+        DocumentationTool javadoc = ToolProvider.getSystemDocumentationTool();
+        StringWriter log = new StringWriter();
+        try (StandardJavaFileManager files = javadoc.getStandardFileManager(null, null, null)) {
+            List<String> options = List.of(
+                    "-classpath", System.getProperty("java.class.path"),
+                    "-turingClassesDir", classes.toString(),
+                    "-turingManifestResource", "META-INF/turing-plugin/sample.greeter.json");
+            Boolean ok = javadoc.getTask(log, files, null, TuringPluginDoclet.class, options,
+                    files.getJavaFileObjects(src)).call();
+            assertTrue(ok, log.toString());
+        }
+
+        assertTrue(Files.exists(classes.resolve("META-INF/turing-plugin/sample.greeter.json")));
+        assertFalse(Files.exists(classes.resolve("META-INF/turing-plugin.json")), "the shared name is not written");
+        assertEquals("META-INF/turing-plugin/sample.greeter.json\n",
+                Files.readString(classes.resolve(TuringPluginDoclet.INDEX_RESOURCE)));
+    }
 }

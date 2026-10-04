@@ -61,6 +61,16 @@ import java.util.stream.Collectors;
  * Editor reads it from JAR entries without loading the plugin into the JVM and
  * {@code ActionCatalog} merges it with the JSON Schemas.</p>
  *
+ * <h2>One file per jar, and an index an uber-jar keeps</h2>
+ *
+ * <p>An uber-jar keeps one entry per name, so when every jar writes {@code META-INF/turing-plugin.json}
+ * only one survives the merge and the other jars' actions lose their prose. Give the file a name of
+ * its own with {@code -turingManifestResource META-INF/turing-plugin/<groupId>.<artifactId>.json}
+ * (and {@code -turingClassesDir} for where the classes go); the doclet then also writes the index
+ * line {@code META-INF/services/com.scivicslab.pojoactor.action.schema.ActionManifestSource}, a
+ * services file, which uber-jar builders concatenate rather than drop. {@code ActionManifest} reads
+ * every resource the index names, and {@code META-INF/turing-plugin.json} as before.</p>
+ *
  * <p>Configure in maven-javadoc-plugin:</p>
  * <pre>{@code
  * <execution>
@@ -75,14 +85,24 @@ import java.util.stream.Collectors;
  *       <version>3.0.1</version>
  *     </docletArtifact>
  *     <useStandardDocletOptions>false</useStandardDocletOptions>
- *     <outputDirectory>${project.build.outputDirectory}/META-INF</outputDirectory>
+ *     <additionalOptions>
+ *       <additionalOption>-turingClassesDir</additionalOption>
+ *       <additionalOption>${project.build.outputDirectory}</additionalOption>
+ *       <additionalOption>-turingManifestResource</additionalOption>
+ *       <additionalOption>META-INF/turing-plugin/${project.groupId}.${project.artifactId}.json</additionalOption>
+ *     </additionalOptions>
  *   </configuration>
  * </execution>
  * }</pre>
  */
 public class TuringPluginDoclet implements Doclet {
 
+    /** The resource the index names and {@code ActionManifest} reads first. */
+    public static final String INDEX_RESOURCE = "META-INF/services/com.scivicslab.pojoactor.action.schema.ActionManifestSource";
+
     private String outputDir = "target/classes/META-INF";
+    private String classesDir = null;
+    private String manifestResource = null;
     private Reporter reporter;
 
     @Override
@@ -123,7 +143,29 @@ public class TuringPluginDoclet implements Doclet {
                 return true;
             }
         };
-        return Set.of(dOption, turingOption);
+        Option classesOption = new Option() {
+            @Override public int getArgumentCount() { return 1; }
+            @Override public String getDescription() { return "The classes directory the manifest resource and its index are written under"; }
+            @Override public Kind getKind() { return Kind.OTHER; }
+            @Override public List<String> getNames() { return List.of("-turingClassesDir"); }
+            @Override public String getParameters() { return "<directory>"; }
+            @Override public boolean process(String opt, List<String> arguments) {
+                classesDir = arguments.get(0);
+                return true;
+            }
+        };
+        Option resourceOption = new Option() {
+            @Override public int getArgumentCount() { return 1; }
+            @Override public String getDescription() { return "Resource path of this jar's manifest, unique to the jar, e.g. META-INF/turing-plugin/<groupId>.<artifactId>.json"; }
+            @Override public Kind getKind() { return Kind.OTHER; }
+            @Override public List<String> getNames() { return List.of("-turingManifestResource"); }
+            @Override public String getParameters() { return "<resource>"; }
+            @Override public boolean process(String opt, List<String> arguments) {
+                manifestResource = arguments.get(0);
+                return true;
+            }
+        };
+        return Set.of(dOption, turingOption, classesOption, resourceOption);
     }
 
     @Override
@@ -364,6 +406,23 @@ public class TuringPluginDoclet implements Doclet {
 
     private boolean writeJson(List<Map<String, Object>> actors) {
         try {
+            if (manifestResource != null) {
+                if (classesDir == null) {
+                    reporter.print(Diagnostic.Kind.ERROR, "TuringPluginDoclet: -turingManifestResource needs -turingClassesDir");
+                    return false;
+                }
+                Path classes = Paths.get(classesDir);
+                Path output = classes.resolve(manifestResource);
+                Files.createDirectories(output.getParent());
+                Files.writeString(output, buildJson(actors));
+                // The index is a services file because that is the one kind of entry an uber-jar
+                // builder concatenates instead of keeping only one of.
+                Path index = classes.resolve(INDEX_RESOURCE);
+                Files.createDirectories(index.getParent());
+                Files.writeString(index, manifestResource + "\n");
+                reporter.print(Diagnostic.Kind.NOTE, "TuringPluginDoclet: wrote " + output + " and its index line in " + index);
+                return true;
+            }
             Path dir = Paths.get(outputDir);
             Files.createDirectories(dir);
             Path output = dir.resolve("turing-plugin.json");

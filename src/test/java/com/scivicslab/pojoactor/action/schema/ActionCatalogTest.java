@@ -154,6 +154,14 @@ class ActionCatalogTest {
         assertTrue(ActionCatalog.actionNamesOf(PoliteGreeter.class).contains("greetTyped"));
     }
 
+    /** The default manifest reads the resources the services-file index names, from every jar. */
+    @Test
+    void readsTheManifestsTheIndexNames() {
+        ActionManifest manifest = new ActionManifest();
+        assertEquals("Greets whoever the text names.", manifest.docFor(Greeter.class, "greet").description(),
+                "src/test/resources' index names test-turing-plugin.json, so the default manifest holds it");
+    }
+
     @Test
     void describesByClassWithoutARunningActor() {
         var names = ActionCatalog.actionNamesOf(Greeter.class);
