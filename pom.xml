@@ -7,7 +7,7 @@
 
     <groupId>com.scivicslab</groupId>
     <artifactId>turing-workflow</artifactId>
-    <version>4.3.0-SNAPSHOT</version>
+    <version>4.3.0</version>
     <packaging>jar</packaging>
 
     <name>Turing-workflow</name>
@@ -49,7 +49,7 @@
       <dependency>
         <groupId>com.scivicslab</groupId>
         <artifactId>pojo-actor</artifactId>
-        <version>4.2.0</version>
+        <version>4.3.0</version>
       </dependency>
 
       <dependency>
