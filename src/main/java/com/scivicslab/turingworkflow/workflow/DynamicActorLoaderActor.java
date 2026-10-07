@@ -423,8 +423,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                 return new ActionResult(false, "Refusing to remove the root actor");
             }
 
-            // getActor, not getIIActor: an actor system holds two registries — the plain one and
-            // the interpreter-interfaced one — and a subtree crosses both (a conversation tab is a
+            // getActor, not getIIActor: a subtree can mix the two kinds (a conversation tab is a
             // plain actor whose .chat is an IIActorRef). getIIActor would also build a new actor
             // for a built-in name such as calc, which is the opposite of removing one.
             ActorRef<?> actor = system.getActor(actorName);
@@ -432,16 +431,13 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                 return new ActionResult(false, "Actor not found: " + actorName);
             }
 
-            String parentName = actor.getParentName();
-            if (parentName != null) {
-                ActorRef<?> parent = system.getActor(parentName);
-                if (parent != null) {
-                    parent.getNamesOfChildren().remove(actorName);
-                }
-            }
+            // Named before removal -- ActorSystem.removeActorRecursively leaves nothing behind
+            // to list afterward.
+            List<String> removed = descendantNames(actor);
+            removed.add(actorName);
 
-            List<String> removed = new ArrayList<>();
-            removeSubtree(actor, removed);
+            system.removeActorRecursively(actorName);
+
             return new ActionResult(true,
                 "Removed " + removed.size() + " actor(s): " + String.join(", ", removed));
         } catch (Exception e) {
@@ -449,30 +445,17 @@ public class DynamicActorLoaderActor implements CallableByActionName {
         }
     }
 
-    /** Removes {@code actor}'s descendants, then the actor itself, naming each in {@code removed}. */
-    private void removeSubtree(ActorRef<?> actor, List<String> removed) {
+    /** Names every descendant of {@code actor}, leaf before parent, not including {@code actor} itself. */
+    private List<String> descendantNames(ActorRef<?> actor) {
+        List<String> names = new ArrayList<>();
         for (String childName : new ArrayList<>(actor.getNamesOfChildren())) {
             ActorRef<?> child = system.getActor(childName);
             if (child != null) {
-                removeSubtree(child, removed);
-            } else {
-                forget(childName);
+                names.addAll(descendantNames(child));
             }
+            names.add(childName);
         }
-        actor.getNamesOfChildren().clear();
-        forget(actor.getName());
-        try {
-            actor.close();
-        } catch (Exception e) {
-            logger.warning("Closing " + actor.getName() + " failed: " + e.getMessage());
-        }
-        removed.add(actor.getName());
-    }
-
-    /** Takes a name out of both registries; a name lives in one of them, and this does not ask which. */
-    private void forget(String actorName) {
-        system.removeActor(actorName);
-        system.removeIIActor(actorName);
+        return names;
     }
 
     /**
