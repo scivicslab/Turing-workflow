@@ -216,6 +216,7 @@ public class SubworkflowCallTest {
                     return super.callByActionName(actionName, args);
                 }
             };
+            system.removeActor("main");   // the one the setup registered: this test puts its own under the name
             system.addIIActor(interpreterActor);
 
             interpreter.setWorkflowBaseDir(tempDir.toString());

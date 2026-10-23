@@ -59,12 +59,12 @@ class IIActorRegistryTest {
     void aNameRegisteredTwiceLeavesOneActorUnderIt() {
         IIActorSystem system = new IIActorSystem("one-registry-collision");
         try {
-            system.actorOf("both", "a plain actor");
+            ActorRef<String> plain = system.actorOf("both", "a plain actor");
             Callable facing = new Callable("both", system);
-            system.addIIActor(facing);
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> system.addIIActor(facing),
+                    "a name another actor holds is refused");
 
-            assertSame(facing, system.getActor("both"), "the second registration is the one that stands");
-            assertSame(facing, system.getIIActor("both"), "and both doors lead to it");
+            assertSame(plain, system.getActor("both"), "the first registration is the one that stands");
         } finally {
             system.terminate();
         }
