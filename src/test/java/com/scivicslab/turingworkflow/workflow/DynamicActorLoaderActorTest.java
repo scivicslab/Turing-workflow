@@ -19,6 +19,7 @@ package com.scivicslab.turingworkflow.workflow;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -231,6 +232,59 @@ public class DynamicActorLoaderActorTest {
         assertNotNull(childActor, "Child actor should be created");
         assertEquals("node-192.168.5.14", childActor.getParentName(),
             "Child's parent should be the actual actor name, not '.'");
+    }
+
+    @Test
+    @DisplayName("A workflow's own actor, made as ./name, is its own: two runs of the workflow do not share it")
+    public void testScopedChildIsTheRunsOwn() throws Exception {
+        // the loader a program registers, which takes its arguments as a workflow writes them
+        system.addIIActor(new com.scivicslab.turingworkflow.workflow.DynamicActorLoaderIIAR("loader", system));
+        String cls = "com.scivicslab.turingworkflow.workflow.DynamicActorLoaderActorTest$TestActor";
+        // each run makes ./tree, uses it, and the first run removes its own at the end
+        String make = """
+            name: make
+            steps:
+              - states: ["0", "end"]
+                actions:
+                  - actor: loader
+                    method: createChild
+                    arguments: ['jexl:self', "./tree", "%s"]
+                  - actor: ./tree
+                    method: unknownAction
+            """.formatted(cls);
+        String remove = """
+            name: remove
+            steps:
+              - states: ["0", "end"]
+                actions:
+                  - actor: loader
+                    method: removeChild
+                    arguments: ['jexl:self', "./tree"]
+            """;
+        IIActorRef<TestActor> job1 = new TestActorIIAR("project1/job-01", new TestActor(), system);
+        IIActorRef<TestActor> job2 = new TestActorIIAR("project2/job-01", new TestActor(), system);
+        system.addIIActor(job1);
+        system.addIIActor(job2);
+        for (IIActorRef<TestActor> job : List.of(job1, job2)) {
+            Interpreter in = new Interpreter.Builder().loggerName("test").team(system).build();
+            in.setSelfActorRef(job);
+            in.readYaml(new java.io.ByteArrayInputStream(make.getBytes()));
+            in.execCode();
+        }
+        IIActorRef<?> tree1 = system.getIIActor("project1/job-01.tree");
+        IIActorRef<?> tree2 = system.getIIActor("project2/job-01.tree");
+        assertNotNull(tree1, "the first run's tree is registered under its own name");
+        assertNotNull(tree2, "the second run's tree is registered under its own name");
+        assertTrue(tree1 != tree2, "the two runs do not share one actor");
+        assertEquals(List.of(tree1), system.resolveActorPath("project1/job-01", "./tree"), "./tree is the run's own");
+        assertEquals(List.of(tree2), system.resolveActorPath("project2/job-01", "./tree"), "./tree is the run's own");
+
+        Interpreter in = new Interpreter.Builder().loggerName("test").team(system).build();
+        in.setSelfActorRef(job1);
+        in.readYaml(new java.io.ByteArrayInputStream(remove.getBytes()));
+        assertTrue(in.execCode().isSuccess());
+        assertTrue(!system.hasIIActor("project1/job-01.tree"), "the first run removed its own tree");
+        assertNotNull(system.getIIActor("project2/job-01.tree"), "and left the other run's alone");
     }
 
     /**

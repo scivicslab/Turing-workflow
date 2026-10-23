@@ -306,6 +306,23 @@ public class IIActorSystem extends ActorSystem {
     }
 
     /**
+     * The name a child is registered under when it is named after its parent: {@code project1/job-03.tree} for
+     * the child {@code tree} of {@code project1/job-03}.
+     *
+     * <p>Actor names are one name space for the whole system. Two runs of the same workflow that each make an
+     * actor called {@code tree} would otherwise share one: the second registration replaces the first, and the
+     * first run to remove it removes the other's. Named after the actor the workflow runs as, each run has its
+     * own, and the workflow still writes {@code ./tree} ({@code ScopedChildActors}).</p>
+     *
+     * @param parentName the parent's registered name
+     * @param name       the child's name within its parent
+     * @return {@code parentName + "." + name}
+     */
+    public static String scopedChildName(String parentName, String name) {
+        return parentName + "." + name;
+    }
+
+    /**
      * Resolves an actor path relative to a given actor using Unix-style path notation.
      *
      * <p>Supports the following path formats:</p>
@@ -318,6 +335,9 @@ public class IIActorSystem extends ActorSystem {
      *   <li><code>../web*</code> - siblings whose names start with "web"</li>
      *   <li><code>../*server</code> - siblings whose names end with "server"</li>
      *   <li><code>./child*</code> - children whose names start with "child"</li>
+     *   <li><code>./name</code> also finds the child registered as {@code <fromActorName>.name}, the name
+     *       {@link #scopedChildName} gives it: an actor a workflow made for itself, under a name no other
+     *       run of the same workflow shares</li>
      * </ul>
      *
      * <p>Wildcard patterns:</p>
@@ -400,10 +420,15 @@ public class IIActorSystem extends ActorSystem {
                     }
                 }
             } else {
-                // Exact child name
+                // Exact child name; failing that, the child named after its parent, <from>.<name>
+                // (ScopedChildActors: a workflow's own actors are named so that two runs of it do not share one)
                 IIActorRef<?> child = getIIActor(childPattern);
                 if (child != null && childNames.contains(childPattern)) {
                     results.add(child);
+                } else {
+                    String scoped = scopedChildName(fromActorName, childPattern);
+                    IIActorRef<?> own = childNames.contains(scoped) ? getIIActor(scoped) : null;
+                    if (own != null) results.add(own);
                 }
             }
 

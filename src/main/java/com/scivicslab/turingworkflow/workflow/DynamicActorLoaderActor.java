@@ -266,6 +266,14 @@ public class DynamicActorLoaderActor implements CallableByActionName {
      *   <li>A POJO implementing {@link CallableByActionName} (legacy, wrapped with GenericIIAR)</li>
      * </ul>
      *
+     * <p>An actor name written {@code ./name} is the parent's own: the child is registered as
+     * {@code <parentActorName>.name} ({@link IIActorSystem#scopedChildName}), and a workflow running as that parent
+     * reaches it as {@code actor: ./name}. A workflow makes the actors it needs this way, under its own name, so
+     * that another run of it at the same time makes its own:</p>
+     * <pre>{@code
+     * arguments: ['jexl:self', "./tree", "com.example.TreeIIAR"]
+     * }</pre>
+     *
      * @param args JSON array: [parentActorName, actorName, className]
      * @return ActionResult indicating success or failure
      */
@@ -296,6 +304,8 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                 actorName = parts[1].trim();
                 className = parts[2].trim();
             }
+
+            actorName = ownName(parentName, actorName);
 
             // Find parent actor
             IIActorRef<?> parent = system.getIIActor(parentName);
@@ -400,6 +410,9 @@ public class DynamicActorLoaderActor implements CallableByActionName {
      * <p>The actor's own logs are untouched. They are rows in the log database, not state of the
      * actor, and a removed actor's history is what a reader needs most.</p>
      *
+     * <p>{@code [parentActorName, "./name"]} removes the child {@link #createChild} registered for that parent as
+     * {@code ./name}.</p>
+     *
      * @param args JSON array: [actorName] or [parentActorName, actorName]
      * @return ActionResult naming every actor removed
      */
@@ -412,6 +425,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                     return new ActionResult(false, "Invalid args. Expected array: [actorName]");
                 }
                 actorName = jsonArray.getString(jsonArray.length() - 1).trim();
+                if (jsonArray.length() > 1) actorName = ownName(jsonArray.getString(0).trim(), actorName);
             } else if (args != null && !args.isBlank()) {
                 String[] parts = args.split(",");
                 actorName = parts[parts.length - 1].trim();
@@ -801,5 +815,10 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             LOGGER.exiting(CLASS_NAME, "callByActionName", failResult);
             return failResult;
         }
+    }
+
+    /** @return {@code name}, or the parent's own child name when it is written {@code ./name} */
+    private static String ownName(String parentName, String name) {
+        return name.startsWith("./") ? IIActorSystem.scopedChildName(parentName, name.substring(2)) : name;
     }
 }
