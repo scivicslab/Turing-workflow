@@ -284,20 +284,6 @@ public class Interpreter {
         return successResult;
     }
 
-    /**
-     * Converts action arguments to JSON format.
-     *
-     * <p>Handles multiple {@code arguments} formats:</p>
-     * <ul>
-     *   <li>If {@code arguments} is a String: wraps in JSON array (e.g., {@code "value"} → {@code ["value"]})</li>
-     *   <li>If {@code arguments} is a List: converts to JSON array string (e.g., {@code ["a","b"]})</li>
-     *   <li>If {@code arguments} is a Map: converts to JSON object string (e.g., {@code {"key":"value"}})</li>
-     *   <li>If {@code arguments} is null: returns empty array {@code []}</li>
-     * </ul>
-     *
-     * @param action the action containing arguments
-     * @return JSON string (array for String/List, object for Map)
-     */
     /** Marks an argument value as an expression rather than text to substitute into. */
     private static final String JEXL_PREFIX = "jexl:";
 
@@ -339,35 +325,78 @@ public class Interpreter {
         }
     }
 
+    /**
+     * Converts an action's arguments, as the workflow wrote them, to the JSON handed to the actor.
+     *
+     * <p>Each argument written as {@code jexl:} is evaluated first; the shape is then decided by
+     * {@link #argumentsToJson(Object)}.</p>
+     *
+     * @param action the action containing arguments
+     * @return JSON string (object for a Map, array otherwise)
+     */
     private String convertArgumentsToJson(Action action) {
         Object arguments = action.getArguments();
+        Object resolved;
+        if (arguments == null) {
+            resolved = null;
+        } else if (arguments instanceof List<?> list) {
+            List<Object> values = new ArrayList<>();
+            for (Object item : list) {
+                values.add(argumentValue(item));
+            }
+            resolved = values;
+        } else if (arguments instanceof Map<?, ?> map) {
+            Map<String, Object> values = new java.util.LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                values.put(entry.getKey().toString(), argumentValue(entry.getValue()));
+            }
+            resolved = values;
+        } else {
+            // A single value stays one element even when its expression answers a map or a list.
+            List<Object> values = new ArrayList<>();
+            values.add(argumentValue(arguments));
+            resolved = values;
+        }
+        return argumentsToJson(resolved);
+    }
 
+    /**
+     * Shapes the arguments of one action call into the JSON string the actor receives.
+     *
+     * <p>Both a step's own action and each child call made by {@link #apply(String)} pass their
+     * arguments through here, so an action receives the same JSON however it is reached:</p>
+     * <ul>
+     *   <li>a Map becomes a JSON object (e.g. {@code {"command":"hostname"}}), which an action
+     *       declaring named arguments ({@code argsType}) requires</li>
+     *   <li>a List becomes a JSON array (e.g. {@code ["a","b"]})</li>
+     *   <li>null becomes the empty array {@code []}</li>
+     *   <li>any single value (a String, a number) becomes a one-element array
+     *       (e.g. {@code "value"} becomes {@code ["value"]})</li>
+     * </ul>
+     *
+     * @param arguments the arguments, with expressions already evaluated
+     * @return JSON string (object for a Map, array otherwise)
+     */
+    static String argumentsToJson(Object arguments) {
         if (arguments == null) {
             return "[]";
         }
-
-        if (arguments instanceof String) {
-            JSONArray jsonArray = new JSONArray();
-            jsonArray.put(argumentValue(arguments));
-            return jsonArray.toString();
-        } else if (arguments instanceof List) {
-            JSONArray jsonArray = new JSONArray();
-            for (Object item : (List<?>) arguments) {
-                jsonArray.put(argumentValue(item));
-            }
-            return jsonArray.toString();
-        } else if (arguments instanceof Map) {
-            Map<?, ?> map = (Map<?, ?>) arguments;
+        if (arguments instanceof Map<?, ?> map) {
             JSONObject jsonObject = new JSONObject();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
-                jsonObject.put(entry.getKey().toString(), argumentValue(entry.getValue()));
+                jsonObject.put(entry.getKey().toString(), entry.getValue());
             }
             return jsonObject.toString();
-        } else {
-            throw new IllegalArgumentException(
-                "Unsupported arguments type: " + arguments.getClass().getName() +
-                ". Expected String, List, or Map.");
         }
+        JSONArray jsonArray = new JSONArray();
+        if (arguments instanceof List<?> list) {
+            for (Object item : list) {
+                jsonArray.put(item);
+            }
+        } else {
+            jsonArray.put(arguments);
+        }
+        return jsonArray.toString();
     }
 
     /**
@@ -1581,18 +1610,15 @@ public class Interpreter {
             String actorPattern = action.getString("actor");
             String methodName = action.getString("method");
 
-            // Get arguments - handle both array and single value
-            String args;
-            if (action.has("arguments")) {
-                Object argsObj = action.get("arguments");
-                if (argsObj instanceof JSONArray) {
-                    args = argsObj.toString();
-                } else {
-                    args = new JSONArray().put(argsObj).toString();
-                }
-            } else {
-                args = "[]";
+            // Shape the children's arguments as a step's own action call shapes them, so an
+            // object stays an object for an action declaring named arguments.
+            Object argsObj = action.has("arguments") ? action.get("arguments") : null;
+            if (argsObj instanceof JSONObject object) {
+                argsObj = object.toMap();
+            } else if (argsObj instanceof JSONArray array) {
+                argsObj = array.toList();
             }
+            String args = argumentsToJson(argsObj);
 
             // Find matching child actors
             List<IIActorRef<?>> matchedActors = findMatchingChildActors(actorPattern);

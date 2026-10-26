@@ -19,7 +19,11 @@ package com.scivicslab.turingworkflow.workflow;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
@@ -29,6 +33,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
@@ -263,6 +268,59 @@ public class SubworkflowApplyTest {
 
             assertFalse(result.isSuccess());
             assertTrue(result.getResult().contains("No actors matched"));
+        }
+
+        @Test
+        @DisplayName("Should hand named arguments to each child as an object, as a direct action call does")
+        public void testApplyNamedArguments() {
+            Map<String, String> received = new ConcurrentHashMap<>();
+            for (int i = 1; i <= 2; i++) {
+                CommandNode node = new CommandNode("node-" + i, received, system);
+                node.setParentName(interpreterActor.getName());
+                interpreterActor.getNamesOfChildren().add(node.getName());
+                system.addIIActor(node);
+            }
+
+            String yaml = """
+                name: apply-named-arguments
+                steps:
+                  - states: ["0", "end"]
+                    actions:
+                      - actor: main
+                        method: apply
+                        arguments:
+                          actor: "node-*"
+                          method: executeCommand
+                          arguments:
+                            command: hostname
+                """;
+            interpreter.readYaml(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+            ActionResult result = interpreter.runUntilEnd(10);
+
+            assertTrue(result.isSuccess(), result.getResult());
+            assertEquals(Map.of("node-1", "hostname", "node-2", "hostname"), received);
+        }
+    }
+
+    /**
+     * A child whose action declares named arguments, as plugin-ssh's {@code executeCommand} does.
+     */
+    public static class CommandNode extends IIActorRef<Object> {
+
+        /** The named arguments of {@code executeCommand}. */
+        public record CommandArgs(String command) {}
+
+        private final Map<String, String> received;
+
+        CommandNode(String name, Map<String, String> received, IIActorSystem system) {
+            super(name, new Object(), system);
+            this.received = received;
+        }
+
+        @Action(value = "executeCommand", argsType = CommandArgs.class)
+        public ActionResult executeCommand(CommandArgs args) {
+            received.put(getName(), args.command());
+            return new ActionResult(true, "ran " + args.command());
         }
     }
 }
