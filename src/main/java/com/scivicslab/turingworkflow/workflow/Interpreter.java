@@ -377,7 +377,7 @@ public class Interpreter {
      * @param arguments the arguments, with expressions already evaluated
      * @return JSON string (object for a Map, array otherwise)
      */
-    static String argumentsToJson(Object arguments) {
+    public static String argumentsToJson(Object arguments) {
         if (arguments == null) {
             return "[]";
         }
