@@ -488,22 +488,17 @@ public class Interpreter {
     public void readYaml(Path yamlPath, Path overlayDir) throws IOException {
         WorkflowKustomizer kustomizer = new WorkflowKustomizer();
         String workflowFileName = yamlPath.getFileName().toString();
-        String baseName = workflowFileName.replace(".yaml", "").replace(".yml", "");
 
         // Build the overlay and get the specific workflow
         Map<String, Map<String, Object>> workflows = kustomizer.build(overlayDir);
 
         // Debug: log available workflow keys
         if (logger != null && logger.isLoggable(java.util.logging.Level.FINE)) {
-            logger.fine("readYaml: looking for '" + workflowFileName + "' (baseName='" + baseName + "')");
+            logger.fine("readYaml: looking for '" + workflowFileName + "'");
             logger.fine("readYaml: available workflows: " + workflows.keySet());
         }
 
-        // Find the workflow with priority:
-        // 1. Exact match (workflow.yaml)
-        // 2. Exact match with prefix/suffix (prod-workflow.yaml)
-        // 3. Partial match (fallback for compatibility)
-        Map<String, Object> workflowData = findWorkflowByName(workflows, workflowFileName, baseName);
+        Map<String, Object> workflowData = WorkflowKustomizer.findWorkflow(workflows, workflowFileName);
 
         if (workflowData == null) {
             throw new IOException("Workflow not found after overlay: " + workflowFileName);
@@ -516,84 +511,6 @@ public class Interpreter {
         if (yamlPath.getParent() != null) {
             this.workflowBaseDir = yamlPath.getParent().toString();
         }
-    }
-
-    /**
-     * Finds a workflow by name with priority matching.
-     *
-     * <p>Priority order:</p>
-     * <ol>
-     *   <li>Exact match (workflow.yaml)</li>
-     *   <li>Exact match with prefix (prod-workflow.yaml)</li>
-     *   <li>Exact match with suffix (workflow-prod.yaml)</li>
-     *   <li>Partial match containing base name (fallback)</li>
-     * </ol>
-     *
-     * @param workflows the map of workflow file names to their data
-     * @param workflowFileName the original workflow file name (e.g., "workflow.yaml")
-     * @param baseName the base name without extension (e.g., "workflow")
-     * @return the workflow data, or null if not found
-     */
-    private Map<String, Object> findWorkflowByName(
-            Map<String, Map<String, Object>> workflows,
-            String workflowFileName,
-            String baseName) {
-
-        // 1. Exact match
-        if (workflows.containsKey(workflowFileName)) {
-            if (logger != null && logger.isLoggable(java.util.logging.Level.FINE)) {
-                logger.fine("findWorkflowByName: exact match found for '" + workflowFileName + "'");
-            }
-            return workflows.get(workflowFileName);
-        }
-        if (logger != null && logger.isLoggable(java.util.logging.Level.FINE)) {
-            logger.fine("findWorkflowByName: no exact match for '" + workflowFileName + "'");
-        }
-
-        // 2. Exact match with prefix/suffix (e.g., prod-workflow.yaml or workflow-prod.yaml)
-        // Collect all candidates and pick the shortest one (most specific match)
-        // This prevents "oogasawa-main-setup" from matching when "oogasawa-setup" exists
-        String bestMatch = null;
-        Map<String, Object> bestResult = null;
-
-        for (Map.Entry<String, Map<String, Object>> entry : workflows.entrySet()) {
-            String key = entry.getKey();
-            String keyBaseName = key.replace(".yaml", "").replace(".yml", "");
-
-            // Check if key ends with the base name (prefix case: prod-workflow)
-            if (keyBaseName.endsWith("-" + baseName) || keyBaseName.endsWith("_" + baseName)) {
-                if (bestMatch == null || keyBaseName.length() < bestMatch.length()) {
-                    bestMatch = keyBaseName;
-                    bestResult = entry.getValue();
-                }
-            }
-            // Check if key starts with the base name (suffix case: workflow-prod)
-            if (keyBaseName.startsWith(baseName + "-") || keyBaseName.startsWith(baseName + "_")) {
-                if (bestMatch == null || keyBaseName.length() < bestMatch.length()) {
-                    bestMatch = keyBaseName;
-                    bestResult = entry.getValue();
-                }
-            }
-        }
-
-        if (bestResult != null) {
-            return bestResult;
-        }
-
-        // 3. Partial match (fallback for backwards compatibility)
-        // Only match if the base name appears as a complete segment
-        for (Map.Entry<String, Map<String, Object>> entry : workflows.entrySet()) {
-            String key = entry.getKey();
-            String keyBaseName = key.replace(".yaml", "").replace(".yml", "");
-
-            // Check for exact word boundary match to avoid "workflow" matching "main-workflow"
-            // This should rarely be reached if prefix/suffix patterns are used correctly
-            if (keyBaseName.equals(baseName)) {
-                return entry.getValue();
-            }
-        }
-
-        return null;
     }
 
     /**

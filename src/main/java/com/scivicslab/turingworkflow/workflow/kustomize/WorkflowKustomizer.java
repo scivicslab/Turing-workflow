@@ -119,6 +119,82 @@ public class WorkflowKustomizer {
     }
 
     /**
+     * Finds a workflow by name with priority matching.
+     *
+     * <p>Priority order:</p>
+     * <ol>
+     *   <li>Exact match (workflow.yaml)</li>
+     *   <li>Exact match with prefix (prod-workflow.yaml)</li>
+     *   <li>Exact match with suffix (workflow-prod.yaml)</li>
+     *   <li>Partial match containing base name (fallback)</li>
+     * </ol>
+     *
+     * <p>A {@code namePrefix} or {@code nameSuffix} in the overlay renames the workflow files,
+     * so the base file name alone does not find them. Every command that looks up one workflow
+     * of an overlay ({@code run -o}, {@code describe -o}) uses this method so that they all
+     * find the same one.</p>
+     *
+     * @param workflows the map of workflow file names to their data, as {@link #build(Path)} returns
+     * @param workflowFileName the base workflow file name (e.g., "workflow.yaml")
+     * @return the workflow data, or null if not found
+     */
+    public static Map<String, Object> findWorkflow(
+            Map<String, Map<String, Object>> workflows,
+            String workflowFileName) {
+        String baseName = workflowFileName.replace(".yaml", "").replace(".yml", "");
+
+        // 1. Exact match
+        if (workflows.containsKey(workflowFileName)) {
+            return workflows.get(workflowFileName);
+        }
+
+        // 2. Exact match with prefix/suffix (e.g., prod-workflow.yaml or workflow-prod.yaml)
+        // Collect all candidates and pick the shortest one (most specific match)
+        // This prevents "oogasawa-main-setup" from matching when "oogasawa-setup" exists
+        String bestMatch = null;
+        Map<String, Object> bestResult = null;
+
+        for (Map.Entry<String, Map<String, Object>> entry : workflows.entrySet()) {
+            String key = entry.getKey();
+            String keyBaseName = key.replace(".yaml", "").replace(".yml", "");
+
+            // Check if key ends with the base name (prefix case: prod-workflow)
+            if (keyBaseName.endsWith("-" + baseName) || keyBaseName.endsWith("_" + baseName)) {
+                if (bestMatch == null || keyBaseName.length() < bestMatch.length()) {
+                    bestMatch = keyBaseName;
+                    bestResult = entry.getValue();
+                }
+            }
+            // Check if key starts with the base name (suffix case: workflow-prod)
+            if (keyBaseName.startsWith(baseName + "-") || keyBaseName.startsWith(baseName + "_")) {
+                if (bestMatch == null || keyBaseName.length() < bestMatch.length()) {
+                    bestMatch = keyBaseName;
+                    bestResult = entry.getValue();
+                }
+            }
+        }
+
+        if (bestResult != null) {
+            return bestResult;
+        }
+
+        // 3. Partial match (fallback for backwards compatibility)
+        // Only match if the base name appears as a complete segment
+        for (Map.Entry<String, Map<String, Object>> entry : workflows.entrySet()) {
+            String key = entry.getKey();
+            String keyBaseName = key.replace(".yaml", "").replace(".yml", "");
+
+            // Check for exact word boundary match to avoid "workflow" matching "main-workflow"
+            // This should rarely be reached if prefix/suffix patterns are used correctly
+            if (keyBaseName.equals(baseName)) {
+                return entry.getValue();
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Builds the customized workflows and returns them as a YAML string.
      *
      * @param overlayDir directory containing overlay-conf.yaml

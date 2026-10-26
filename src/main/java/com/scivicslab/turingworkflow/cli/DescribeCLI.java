@@ -44,6 +44,16 @@ public class DescribeCLI {
      * @param repo the command repository
      */
     public static void registerCommand(CommandRepository repo) {
+        repo.addCommand("Workflow", "describe", options(), "Display workflow and step descriptions.",
+                cl -> new DescribeCLI().execute(cl));
+    }
+
+    /**
+     * Returns the options the "describe" command accepts.
+     *
+     * @return the command's options
+     */
+    static Options options() {
         Options opts = new Options();
         opts.addOption(Option.builder("d")
                 .longOpt("dir")
@@ -65,9 +75,7 @@ public class DescribeCLI {
                 .longOpt("steps")
                 .desc("Also display note/description of each step")
                 .build());
-
-        repo.addCommand("Workflow", "describe", opts, "Display workflow and step descriptions.",
-                cl -> new DescribeCLI().execute(cl));
+        return opts;
     }
 
     /**
@@ -191,11 +199,10 @@ public class DescribeCLI {
             WorkflowKustomizer kustomizer = new WorkflowKustomizer();
             Map<String, Map<String, Object>> workflows = kustomizer.build(overlayDir.toPath());
 
-            String targetName = workflowFile.getName();
-            for (Map.Entry<String, Map<String, Object>> entry : workflows.entrySet()) {
-                if (entry.getKey().equals(targetName)) {
-                    return entry.getValue();
-                }
+            // The same lookup as run -o, so a namePrefix/nameSuffix overlay is found.
+            Map<String, Object> overlaid = WorkflowKustomizer.findWorkflow(workflows, workflowFile.getName());
+            if (overlaid != null) {
+                return overlaid;
             }
 
             // Fall back to raw file
