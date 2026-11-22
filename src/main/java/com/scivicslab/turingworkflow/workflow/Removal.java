@@ -55,6 +55,25 @@ public final class Removal {
     }
 
     /**
+     * Why a workflow with an action written with the singular {@code argument:} key is refused when
+     * it is loaded. The engine only ever read {@code arguments:}, so until 4.x the singular key was
+     * dropped and the action was called with no arguments.
+     */
+    public static final String ARGUMENT_KEY = reason("the step key 'argument:'", "write 'arguments:'");
+
+    /**
+     * Refuses an action, as it was read from YAML, written with the singular {@code argument:} key.
+     *
+     * @param action the action's map; {@code null} is let through
+     * @throws IllegalArgumentException with {@link #ARGUMENT_KEY} when the key is there
+     */
+    public static void refuseArgumentKey(java.util.Map<String, Object> action) {
+        if (action != null && action.containsKey("argument")) {
+            throw new IllegalArgumentException(ARGUMENT_KEY);
+        }
+    }
+
+    /**
      * Returns the reason, without the {@code error:} prefix or the place.
      *
      * @param what    what was removed, for example {@code "the built-in actor 'calc:i'"}

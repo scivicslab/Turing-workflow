@@ -638,6 +638,8 @@ public class Interpreter {
                 if (actionsData != null) {
                     List<Action> actions = new ArrayList<>();
                     for (Map<String, Object> actionData : actionsData) {
+                        // Only arguments: is read; refuse argument: rather than call with no arguments.
+                        Removal.refuseArgumentKey(actionData);
                         Action action = new Action();
                         action.setActor((String) actionData.get("actor"));
                         action.setMethod((String) actionData.get("method"));
