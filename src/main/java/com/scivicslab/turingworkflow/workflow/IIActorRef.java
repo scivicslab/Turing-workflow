@@ -79,6 +79,63 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     private final ActionDispatcher dispatcher = new ActionDispatcher(this, SCHEMAS);
 
     /**
+     * The actor whose own workflow is running the action now, on this thread; null when the action
+     * was not sent by the workflow of the actor it is called on.
+     *
+     * <p>Set around one action by {@link #callAsStep}, which {@code Interpreter.action()} uses for
+     * every step. It says where the call comes from, not which thread runs it: a step that names the
+     * actor running the workflow ({@code actor: this}, or its own name) is that actor's own work.</p>
+     */
+    private static final ThreadLocal<IIActorRef<?>> OWN_STEP = new ThreadLocal<>();
+
+    /**
+     * Calls {@code actionName} on {@code target} as a step of {@code caller}'s workflow, and marks the
+     * call as the target's own step when {@code caller} is {@code target}.
+     *
+     * <p>The marker covers this one call on this thread and is put back afterwards, so a call a
+     * step sends to another actor, and a sub-workflow's steps, never see their caller's marker.</p>
+     *
+     * @param caller the actor whose workflow runs the step, or null when the interpreter has no actor
+     * @param target the actor the step names
+     * @param actionName the action the step names
+     * @param args the arguments as a JSON string
+     * @return the action's result
+     */
+    static ActionResult callAsStep(IIActorRef<?> caller, IIActorRef<?> target, String actionName, String args) {
+        IIActorRef<?> previous = OWN_STEP.get();
+        if (caller != null && caller == target) {
+            OWN_STEP.set(target);
+        } else {
+            OWN_STEP.remove();
+        }
+        try {
+            return target.callByActionName(actionName, args);
+        } finally {
+            if (previous == null) {
+                OWN_STEP.remove();
+            } else {
+                OWN_STEP.set(previous);
+            }
+        }
+    }
+
+    /**
+     * Whether the action running now was sent by the workflow of this very actor ({@code actor: this}
+     * or its own name).
+     *
+     * <p>Such an action runs as part of the message that is running this actor's workflow, so it
+     * must not send itself to this actor's mailbox and wait: the mailbox's virtual thread takes the
+     * next message only when the one it runs has ended, and that one would wait for the next. An
+     * action that works on its own POJO does that work directly when this is true, and through the
+     * mailbox ({@code tell}, {@code ask}) otherwise, as when another actor's step calls it.</p>
+     *
+     * @return true during an action that this actor's own workflow sent to itself
+     */
+    protected final boolean isOwnStep() {
+        return OWN_STEP.get() == this;
+    }
+
+    /**
      * Constructs a new IIActorRef with the specified actor name and object.
      *
      * @param actorName the name of the actor

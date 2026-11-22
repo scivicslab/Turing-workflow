@@ -268,16 +268,16 @@ public class Interpreter {
                         // a sub-workflow, which this.call runs on the real thread of the calling
                         // action; handing the action to the pool and waiting would deadlock once
                         // every real thread of the pool waits the same way (with one, at once).
-                        result = actorAR.callByActionName(action, argumentString);
+                        result = callStep(actorAR, action, argumentString);
                     } else if (executionMode == ExecutionMode.POOL && system != null) {
                         // POOL: Execute on managed thread pool (safe for heavy operations)
                         result = CompletableFuture.supplyAsync(
-                            () -> actorAR.callByActionName(action, argumentString),
+                            () -> callStep(actorAR, action, argumentString),
                             system.getManagedThreadPool()
                         ).get();
                     } else {
                         // DIRECT: Direct synchronous call (for light operations)
-                        result = actorAR.callByActionName(action, argumentString);
+                        result = callStep(actorAR, action, argumentString);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -303,6 +303,16 @@ public class Interpreter {
         ActionResult successResult = new ActionResult(true, "");
         logger.exiting(CLASS_NAME, "action", successResult);
         return successResult;
+    }
+
+    /**
+     * Calls {@code actionName} on {@code target} as a step of this interpreter's workflow. When the
+     * step names the actor running this workflow ({@code actor: this}, or its own name), the action
+     * is told so ({@link IIActorRef#callAsStep}) and does the interpreter's work directly instead of
+     * sending itself to its own mailbox and waiting there.
+     */
+    private ActionResult callStep(IIActorRef<?> target, String actionName, String args) {
+        return IIActorRef.callAsStep(selfActorRef, target, actionName, args);
     }
 
     /**

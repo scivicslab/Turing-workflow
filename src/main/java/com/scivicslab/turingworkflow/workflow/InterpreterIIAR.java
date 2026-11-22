@@ -209,7 +209,7 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
     public ActionResult readYaml(String args) {
         String path = parseFirstArgument(args);
         try (InputStream input = new FileInputStream(new File(path))) {
-            this.tell((Interpreter i) -> i.readYaml(input)).get();
+            inItsTurn((Interpreter i) -> i.readYaml(input));
             return new ActionResult(true, "YAML loaded successfully");
         } catch (IOException e) {
             logger.log(Level.SEVERE, String.format("readYaml: %s", path), e);
@@ -310,7 +310,7 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
     public ActionResult setCurrentState(String args) {
         final String state = parseFirstArgument(args);
         try {
-            this.tell((Interpreter i) -> i.setCurrentState(state)).get();
+            inItsTurn((Interpreter i) -> i.setCurrentState(state));
             return new ActionResult(true, "currentState set to: " + state);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -322,10 +322,44 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
         }
     }
 
-    /** Asks the interpreter on the managed pool and turns the two wait failures into results. */
+    /**
+     * Does {@code work} on the interpreter, in this actor's turn: directly when this actor's own
+     * workflow sent the action ({@link #isOwnStep()}), through the mailbox, waiting for it, when
+     * another actor did.
+     *
+     * <p>An own step runs inside the message that is running the workflow, so a message to this actor
+     * would wait for that message to end while that message waits for it.</p>
+     *
+     * @throws ExecutionException carrying what the work threw
+     */
+    private void inItsTurn(java.util.function.Consumer<Interpreter> work)
+            throws InterruptedException, ExecutionException {
+        if (isOwnStep()) {
+            try {
+                work.accept(this.object);
+            } catch (Throwable t) {
+                throw new ExecutionException(t);   // the same shape as a failure that came back through the mailbox
+            }
+            return;
+        }
+        this.tell(work).get();
+    }
+
+    /**
+     * Does {@code work} on the interpreter and turns the two wait failures into results: directly
+     * when this actor's own workflow sent the action ({@link #isOwnStep()}), on the managed pool
+     * through the mailbox when another actor did.
+     */
     private ActionResult asked(String actionName, String args,
                                java.util.function.Function<Interpreter, ActionResult> work) {
         try {
+            if (isOwnStep()) {
+                try {
+                    return work.apply(this.object);
+                } catch (Throwable t) {
+                    throw new ExecutionException(t);
+                }
+            }
             return this.ask(work, this.system().getManagedThreadPool()).get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

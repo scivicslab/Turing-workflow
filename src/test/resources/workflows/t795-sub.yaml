@@ -1,0 +1,7 @@
+name: t795-sub
+steps:
+  - states: ["0", "end"]
+    actions:
+      - actor: this
+        method: doNothing
+        arguments: ["x"]
