@@ -18,6 +18,7 @@
 package com.scivicslab.turingworkflow.workflow.scheduler;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -29,6 +30,7 @@ import java.util.logging.Logger;
 
 import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.pojoactor.action.CallableByActionName;
+import com.scivicslab.pojoactor.core.ActorClosedException;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 
@@ -168,7 +170,7 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
                         + ": its previous execution has not finished");
                 return;
             }
-            task.running = executeOnActor(taskId, targetActorName, actionName, actionArgs);
+            task.running = executeOnActor(task, targetActorName, actionName, actionArgs);
         }, initialDelay, period, unit));
 
         logger.log(Level.INFO, String.format(
@@ -221,7 +223,7 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
             if (task.cancelled) {
                 return;
             }
-            task.running = executeOnActor(taskId, targetActorName, actionName, actionArgs);
+            task.running = executeOnActor(task, targetActorName, actionName, actionArgs);
             // Count the delay from the end of this execution without holding a tick thread until then.
             task.running.whenComplete((ignored, failure) -> scheduleNext(task, run[0], delay, unit));
         };
@@ -253,7 +255,7 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
         arm(task, executor.schedule(() -> {
             try {
                 if (!task.cancelled) {
-                    executeOnActor(taskId, targetActorName, actionName, actionArgs);
+                    executeOnActor(task, targetActorName, actionName, actionArgs);
                 }
             } finally {
                 // only this task: a task scheduled later under the same id stays registered
@@ -387,15 +389,18 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
      * actor's other messages, as every message to an actor does; the tick thread never runs it
      * and never waits for it. A failure is logged when the returned future completes.
      */
-    private CompletableFuture<?> executeOnActor(String taskId, String targetActorName,
+    private CompletableFuture<?> executeOnActor(ScheduledTask task, String targetActorName,
                                                 String actionName, String actionArgs) {
+        String taskId = task.taskId;
         CompletableFuture<ActionResult> execution;
         try {
-            IIActorRef<?> actor = actorSystem.getIIActor(targetActorName);
+            // Look the actor up without creating it: a scheduled task is not the transition that
+            // creates actors (LookupThatCreates_260914_oo01). An actor that is not registered, or
+            // no longer is, will not run the action, so the task stops as for a closed actor.
+            IIActorRef<?> actor = actorSystem.getActor(targetActorName) instanceof IIActorRef<?> found
+                    ? found : null;
             if (actor == null) {
-                logger.log(Level.WARNING, String.format(
-                    "Actor not found for scheduled task %s: %s",
-                    taskId, targetActorName));
+                stopTask(task, "its actor " + targetActorName + " is not registered");
                 return CompletableFuture.completedFuture(null);
             }
             execution = askAction(actor, actionName, actionArgs);
@@ -404,6 +409,12 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
         }
         return execution.whenComplete((result, failure) -> {
             if (failure != null) {
+                Throwable cause = failure instanceof CompletionException && failure.getCause() != null
+                        ? failure.getCause() : failure;
+                if (cause instanceof ActorClosedException) {
+                    stopTask(task, "its actor " + targetActorName + " is closed");
+                    return;
+                }
                 logger.log(Level.SEVERE, String.format(
                     "Error executing scheduled task %s: %s",
                     taskId, failure.getMessage()), failure);
@@ -413,6 +424,14 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
                     taskId, result.getResult()));
             }
         });
+    }
+
+    /** Cancels a task whose actor will not run it and takes it out of the map, logging it once. */
+    private void stopTask(ScheduledTask task, String reason) {
+        task.cancel();
+        if (scheduledTasks.remove(task.taskId, task)) {
+            logger.log(Level.WARNING, "Stopped scheduled task " + task.taskId + ": " + reason);
+        }
     }
 
     /** Runs the action by name in the actor's mailbox. */
