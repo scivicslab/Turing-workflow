@@ -44,7 +44,7 @@ import com.scivicslab.pojoactor.action.ActionResult;
  * A step that names the actor running the workflow does not wait for that actor's mailbox, for every
  * action, every way of naming the actor, and every way a workflow is started.
  *
- * <p>The rule ({@code OwnStepDispatch_261123_oo01}): when the Interpreter resolves a step's target to
+ * <p>The rule: when the Interpreter resolves a step's target to
  * the actor running the workflow, the action does the interpreter's work directly. Sending the action
  * to that actor's mailbox and waiting for it hangs the actor: the mailbox's virtual thread takes the
  * next message only when the one it runs has ended, and that one waits for the next. Each case runs under

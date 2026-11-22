@@ -31,10 +31,9 @@ import java.util.stream.Stream;
  * action table (one entry per {@code @Action} of {@link InterpreterIIAR}), and the workflows the
  * tests load.
  *
- * <p>The rule these tests pin ({@code Turing-workflow} design document
- * {@code OwnStepDispatch_261123_oo01}): a step whose target resolves to the actor running the
- * workflow does the interpreter's work directly; it never sends itself to that actor's mailbox and
- * waits there. A step another actor sends goes through the mailbox.</p>
+ * <p>The rule these tests pin: a step whose target resolves to the actor running the workflow does
+ * the interpreter's work directly; it never sends itself to that actor's mailbox and waits there. A
+ * step another actor sends goes through the mailbox.</p>
  */
 final class OwnStepFixtures {
 
