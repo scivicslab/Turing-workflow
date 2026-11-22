@@ -526,6 +526,10 @@ public class IIActorSystem extends ActorSystem {
             }
         }
 
+        // A parallel-map item reaches no loader and no workflow state but its own; what it may not
+        // reach is not found, as if it were not there.
+        results.removeIf(found -> !ParallelMapActor.reaches(this, fromActor, found));
+
         LOGGER.logp(Level.FINER, CLASS_NAME, "resolveActorPath",
             "resolved {0} actors: {1}",
             new Object[]{results.size(), results.stream().map(IIActorRef::getName).toList()});
