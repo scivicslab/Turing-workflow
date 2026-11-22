@@ -76,13 +76,13 @@ Default target: `http://localhost:8090/mcp`.
   actions:
     - actor: llm
       method: setUrl
-      arguments: "${llm.url}"
+      arguments: "jexl: state.getString('llm.url')"
 
 - states: ["3", "4"]
   actions:
     - actor: llm
       method: prompt
-      arguments: "Summarize: ${result}"
+      arguments: "jexl: 'Summarize: ' + result"
 ```
 
 ---
@@ -144,7 +144,7 @@ Sections with no entries are omitted. `build` fails if `addMessage` was not call
   actions:
     - actor: llm
       method: callAgent
-      arguments: '{"agent": "${agent}", "prompt": "「${result}」は守られていましたか？OK/NG（理由付き）"}'
+      arguments: {agent: "jexl: state.getString('agent')", prompt: "jexl: '「' + result + '」は守られていましたか？OK/NG（理由付き）'"}
 
 - states: ["verify-next", "verify-loop"]
   label: increment-counter
@@ -206,7 +206,7 @@ writing to a named `str:` actor before the call and reading from another after.
   actions:
     - actor: str:input
       method: set
-      arguments: "${my_param}"
+      arguments: "jexl: state.getString('my_param')"
 
 - states: ["3", "4"]
   label: run-sub
@@ -307,7 +307,7 @@ public class MyActorIIAR extends IIActorRef<MyPojo> {
 - `parseFirstArgument(args)` safely handles both `"value"` and `["value"]` forms.
 - `@Action("methodName")` annotation maps YAML `method:` names to Java methods.
 - `ActionResult(true, message)` = success; `ActionResult(false, message)` = failure (triggers alternative transition).
-- The `message` of `ActionResult` becomes `${result}` for the next action.
+- The `message` of `ActionResult` becomes the last result, `jexl: result`, for the next action.
 - Return `false` for sentinel conditions ("no more items") so the engine can fall through naturally.
 
 ---

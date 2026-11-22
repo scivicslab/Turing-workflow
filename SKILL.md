@@ -1,3 +1,8 @@
+---
+name: turing-workflow
+description: "Complete reference for Turing Workflow, the YAML state-machine engine built on POJO-actor. Use when authoring or debugging a workflow YAML — states and transitions, actions on actors, fallback transitions, subworkflows, apply fan-out over child actors, variable expansion, or the Interpreter's readYaml/reset/runUntilEnd/requestStop semantics."
+---
+
 # Turing Workflow — Complete Reference Skill
 
 Turing Workflow is a YAML-based state-machine workflow engine built on the POJO-actor framework.
@@ -145,7 +150,7 @@ arguments: "$(list:items.get)"         # reads index 0 of list:items (default)
 
 | Where used | Syntax | Engine |
 |-----------|--------|--------|
-| Action `arguments` | `${varName}` — external param / JSON state | Java + Jackson (dot-path) |
+| Action `arguments` | `jexl:expr` — `state` (the interpreter's state, `-P` values included), `result`, `currentState`, `actors` | Apache Commons JEXL 3 |
 | Action `arguments` | `$(actor.method)` — inline method call | Java (evaluated before action runs) |
 | `states` patterns | `*`, `!state`, `a\|b\|c`, `>=5` | Java string matching |
 | `states` patterns | `jexl:expr` | Apache Commons JEXL 3 |
@@ -339,7 +344,7 @@ string or a list (`ActorsAsVariables_260914_oo01`).
    - If any action returns success=false, the engine skips to the next candidate transition (from the same `from` state).
 4. If no candidate transition succeeds, execution fails.
 5. When state becomes `"end"`, execution completes successfully.
-6. The `${result}` variable is automatically updated after every action with the `message` from `ActionResult`.
+6. The last result — `result` in a `jexl:` argument — is updated after every action, a failed one included, with the `message` from `ActionResult`.
 
 ---
 
@@ -405,7 +410,7 @@ steps:
     actions:
       - actor: localNode
         method: executeCommand
-        arguments: ["ls ${target_dir}"]
+        arguments: ["jexl: 'ls ' + state.getString('target_dir')"]
 
   - states: ["2", "fallback"]
     label: dir-not-found
@@ -452,7 +457,7 @@ steps:
     actions:
       - actor: out
         method: print
-        arguments: "Iteration: ${state}"
+        arguments: "jexl: 'Iteration: ' + currentState"
 
   - states: ["jexl:n >= 5", "end"]
     label: loop-exit
@@ -519,11 +524,11 @@ steps:
 
   - states: ["process", "loop"]
     label: process-and-next
-    note: "${result} holds the item"
+    note: "result holds the item"
     actions:
       - actor: out
         method: print
-        arguments: "Processing: ${result}"
+        arguments: "jexl: 'Processing: ' + result"
       - actor: calc:i
         method: inc
 
@@ -583,10 +588,14 @@ When asked to generate a Turing workflow YAML, follow these rules:
    Make it record why it was reached before it ends (`currentState` and `jexl: result`), rather
    than end blindly.
 6. **Use `label:` on every transition** to aid debugging and future patching.
-7. **Variable substitution**: use `${varName}` in arguments; pass variables via `-P` on the CLI.
-   **Always include a `params:` section** for every `${varName}` placeholder used in the workflow.
+7. **External parameters**: a value given with `-P key=value` on the CLI is stored in the
+   interpreter's state; an argument reads it with `jexl: state.getString('key')`.
+   **Always include a `params:` section** for every key the workflow reads from `state` this way.
    Each entry should have a `description` (shown in the editor UI) and a `default` if a sensible
-   default exists. Example: if the workflow uses `${agent}`, add `agent: { description: "Agent name", default: "claude" }`.
+   default exists. Example: if the workflow reads `jexl: state.getString('agent')`, add
+   `agent: { description: "Agent name", default: "claude" }`. The workflow editor passes parameters
+   differently: it replaces `${key}` placeholders in the YAML text before the run (section 11) and
+   does not put them into the state, so a workflow meant to be run from the editor keeps `${key}`.
 8. **Storing inter-step data**: use `this.putJson` / `this.appendJson` and read it back with
    `jexl: state.getString('key')`. Every actor has a JSON state of its own; the one a workflow
    shares between its steps is the interpreter's (section 3.2).
@@ -610,17 +619,20 @@ When asked to generate a Turing workflow YAML, follow these rules:
 12. **Create every actor you use** in the workflow's first transitions and remove them in its last
     (section 3.1). `calc`, `list`, `str` and `out` still appear on first use, but each one logs a
     warning saying no transition created it.
-13. **`$(actor.method)` vs `${result}`**: use `$(actor.method)` to read an actor's current value
-    as an argument (e.g., `"$(calc.get)"`). Use `${result}` to pass the previous action's output.
-14. **Do not embed `${result}` inside a JSON string argument** when the result may contain
-    newlines or quotes — use `str:name.escapeJsonStored` (section 5.8) or store with `interpreter.putJson`
-    then reference with `${key}`.
+13. **Reading values in arguments**: `jexl: result` passes the previous action's output;
+    `jexl: actors.get('calc').get()` calls a method on the object an actor wraps and keeps its type;
+    `jexl: state.getString('key')` reads the interpreter's state. The interpreter expands neither
+    `${...}` nor `$(...)` in arguments.
+14. **Do not paste `result` into a JSON string argument** when the result may contain
+    newlines or quotes — pass a YAML map whose values are `jexl:` expressions (each is evaluated
+    on its own, e.g. `{path: body, value: "jexl: result"}`), use `str:name.escapeJsonStored`
+    (section 5.8), or store with `this.putJson` and read back with `jexl: state.getString('key')`.
 15. **Missing plugins**: if a required plugin is not installed, instruct the user to:
     `git clone` the repository, `rm -rf target`, `mvn install` the plugin, then retry.
 16. **Sub-workflow calls**: use `actor: this, method: call, arguments: ["sub.yaml"]` to invoke a
     reusable sub-workflow. Pass parameters via `vars.set` **before** the call — the child shares
-    the parent's `vars` actor so all set variables are immediately available as `${varName}` inside
-    the sub-workflow. The sub-workflow file is resolved relative to the `-d` base directory.
+    the parent's `vars` actor, so every set variable is readable inside the sub-workflow as
+    `jexl: actors.get('vars').get('varName')`. The sub-workflow file is resolved relative to the `-d` base directory.
 
 ---
 
@@ -635,7 +647,6 @@ The workflow editor exposes MCP tools through the gateway at `http://localhost:8
 |-----------|-----|------|
 | MCP Gateway | `http://localhost:8888/mcp/_all` | Tool aggregator; includes `call_agent`, `list_agents`, and all registered server tools |
 | Workflow Editor | `http://localhost:8091` | Registered as `workflow-editor` in the gateway; exposes workflow management tools |
-| Default LLM Agent | `chat-ui-39500` | LLM agent registered in the gateway; used as target in `callAgent` |
 
 ### 11.2 Available MCP Tools (via `workflow-editor`)
 
@@ -670,7 +681,7 @@ Result: YAML content showing ${repo}, ${dir}, ${task}, ${agent} placeholders
 ```
 Call: workflow-editor__runWorkflowFile
   name="publish-to-github.yaml"
-  parametersJson={"repo":"oogasawa/my-tool","dir":"/home/devteam/works/my-tool","task":"Register this tool as a public GitHub repository","agent":"chat-ui-39500"}
+  parametersJson={"repo":"oogasawa/my-tool","dir":"/home/devteam/works/my-tool","task":"Register this tool as a public GitHub repository"}
   maxIterations=500
 ```
 
@@ -689,11 +700,10 @@ Load them before running workflows to avoid repeating the same parameters.
 **File: `~/works/workflow/environment-parameters/devteam.yaml`**
 ```yaml
 vars:
-  agent: "chat-ui-39500"
+  MCP_GATEWAY_URL: "http://localhost:8888"
 ```
 
 When running `workflow-editor__runWorkflowFile`, merge these defaults into the `parametersJson`.
-Always pass `agent` explicitly unless the workflow has a hardcoded agent name.
 
 ### 11.5 `runWorkflowFile` Parameters Reference
 
@@ -708,8 +718,7 @@ Always pass `agent` explicitly unless the workflow has a hardcoded agent name.
 {
   "repo": "owner/repo-name",
   "dir": "/absolute/path/to/local/directory",
-  "task": "What to do (in Japanese or English)",
-  "agent": "chat-ui-39500"
+  "task": "What to do (in Japanese or English)"
 }
 ```
 
@@ -724,7 +733,6 @@ Always pass `agent` explicitly unless the workflow has a hardcoded agent name.
 **Key points when writing for the `publish-to-github.yaml` pattern:**
 - Plugin loading: `plugin-llm` and `plugin-prompt-builder` are in `~/.m2/repository/`
 - Gateway URL: always use `http://localhost:8888/mcp/_all` for LLM calls
-- Agent name: use `${agent}` (passed as parameter) or hardcode `"chat-ui-39500"`
 - `maxIterations`: use at least `(number_of_warnings × 3) + 20` for verify loops
 
 ### 11.7 Checking Workflow Status During Execution

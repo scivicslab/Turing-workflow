@@ -60,7 +60,7 @@ Holds key-value pairs. Pre-populated with `-P` options from the CLI.
 
 | Method | Arguments | Description |
 |--------|-----------|-------------|
-| `putJson` | `{"path": "key", "value": "val"}` | Stores a value in JSON state (accessible via `${key}`) |
+| `putJson` | `{"path": "key", "value": "val"}` | Stores a value in JSON state (read back with `jexl: state.getString('key')`) |
 | `getJson` | `"key"` or `["key"]` | Gets a value from JSON state |
 | `hasJson` | `"key"` | Returns `"true"` or `"false"` |
 | `clearJson` | `""` | Clears JSON state |
@@ -79,7 +79,7 @@ Every actor inherits these actions from `IIActorRef`:
 |--------|-----------|-------------|
 | `putJson` | `{"path": "key.nested", "value": <any>}` | Stores value in actor's JSON state. An object or array argument is stored as structure, so `key.nested.field` reaches into it |
 | `appendJson` | `{"path": "key.list", "value": <any>}` | Adds one value to the end of the list at that path. A path holding nothing becomes a list of one; a path holding anything that is not a list is refused |
-| `getJson` | `"key.nested"` | Reads from actor's JSON state; result goes to `${result}` |
+| `getJson` | `"key.nested"` | Reads from actor's JSON state; the value becomes the last result (`jexl: result`) |
 | `hasJson` | `"key"` | Checks existence; returns `"true"`/`"false"` |
 | `clearJson` | `""` | Clears actor's JSON state |
 | `printJson` | `""` | Prints actor's JSON state to stdout |
@@ -182,7 +182,7 @@ Stores a single mutable string (initial value: `""`).
 # Store LLM response then escape it before embedding in JSON argument
 - actor: str:body
   method: set
-  arguments: "${result}"
+  arguments: "jexl: result"
 - actor: str:body
   method: escapeJsonStored
 - actor: llm
@@ -206,14 +206,14 @@ Auto-created on first use.
   arguments: "Done. count=$(calc.get)"
 - actor: out
   method: printf
-  arguments: ["Result: %s (%.2f sec)", "${result}", "$(calc:elapsed.get)"]
+  arguments: ["Result: %s (%.2f sec)", "jexl: result", "jexl: actors.get('calc:elapsed').get()"]
 ```
 
 ### 3.10 `this` — Sub-workflow invocation
 
 Calls another workflow YAML file as a child interpreter. The child shares the same `IIActorSystem`
 as the parent — including the `vars` actor — so variables set with `vars.set` before the call are
-visible inside the sub-workflow as `${varName}`.
+readable inside the sub-workflow as `jexl: actors.get('vars').get('varName')`.
 
 | Method | Arguments | Description |
 |--------|-----------|-------------|
@@ -243,8 +243,9 @@ visible inside the sub-workflow as `${varName}`.
       arguments: ["github-publish.yaml"]
 ```
 
-Inside `github-publish.yaml`, `${repo}`, `${dir}`, and `${task}` are available because the
-child interpreter reads from the shared `vars` actor.
+Inside `github-publish.yaml`, `repo`, `dir` and `task` are readable as
+`jexl: actors.get('vars').get('repo')` and so on, because the child interpreter shares the
+parent's `vars` actor.
 
 **Notes:**
 - The sub-workflow file path is resolved relative to the `-d` base directory passed on the CLI.
@@ -252,4 +253,4 @@ child interpreter reads from the shared `vars` actor.
   `IIActorSystem` after the call returns. On the second call to the same sub-workflow,
   `loader.createChild` for the same actor name may be a no-op or error — design sub-workflows
   to be idempotent when called multiple times, or use uniquely named actors.
-- `${result}` after `this.call` holds the final output of the sub-workflow.
+- The last result (`jexl: result`) after `this.call` holds the final output of the sub-workflow.

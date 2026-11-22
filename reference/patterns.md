@@ -38,7 +38,11 @@ steps:
 
 ---
 
-### 5.2 External parameters (`params` + `${varName}`)
+### 5.2 External parameters (`params` + `jexl: state.getString(...)`)
+
+A value given with `-P key=value` is stored in the interpreter's state; read it with
+`jexl: state.getString('key')`. (The workflow editor instead replaces `${key}` placeholders in the
+YAML text before the run, and does not put the values into the state.)
 
 ```yaml
 name: greet-user
@@ -56,7 +60,7 @@ steps:
     actions:
       - actor: out
         method: print
-        arguments: "${greeting}, ${username}!"
+        arguments: "jexl: state.getString('greeting') + ', ' + state.getString('username') + '!'"
 
   - states: ["!end", "end"]
     label: catch-all
@@ -128,7 +132,7 @@ steps:
     actions:
       - actor: localNode
         method: executeCommand
-        arguments: ["ls ${target_dir}"]
+        arguments: ["jexl: 'ls ' + state.getString('target_dir')"]
 
   - states: ["2", "fallback"]
     label: dir-not-found
@@ -225,7 +229,7 @@ steps:
     actions:
       - actor: str:mode
         method: set
-        arguments: "${build}"
+        arguments: "jexl: state.getString('build')"
       - actor: str:mode
         method: contains
         arguments: "all"
@@ -272,7 +276,7 @@ steps:
     actions:
       - actor: worker
         method: process
-        arguments: "${result}"
+        arguments: "jexl: result"
 
   - states: ["process", "loop"]
     label: skip-on-failure
@@ -297,7 +301,7 @@ steps:
     actions:
       - actor: out
         method: print
-        arguments: "Iteration: ${state}"
+        arguments: "jexl: 'Iteration: ' + currentState"
 
   - states: ["jexl:n >= 5", "end"]
     label: loop-exit
@@ -380,11 +384,11 @@ steps:
 
   - states: ["process", "loop"]
     label: process-and-next
-    note: "${result} holds the warning text"
+    note: "result holds the warning text"
     actions:
       - actor: out
         method: print
-        arguments: "Warning: ${result}"
+        arguments: "jexl: 'Warning: ' + result"
       - actor: calc:i
         method: inc
 
@@ -509,11 +513,11 @@ steps:
 
   - states: ["process", "loop"]
     label: process-warning
-    note: "${result} holds the warning text"
+    note: "result holds the warning text"
     actions:
       - actor: out
         method: print
-        arguments: "Warning: ${result}"
+        arguments: "jexl: 'Warning: ' + result"
 
   - states: ["!end", "end"]
     label: catch-all
@@ -654,7 +658,7 @@ steps:
     actions:
       - actor: str:input
         method: set
-        arguments: "${input_file}"
+        arguments: "jexl: state.getString('input_file')"
 
   - states: ["3", "4"]
     label: run-sub
@@ -731,7 +735,7 @@ steps:
     actions:
       - actor: str:input
         method: set
-        arguments: "${result}"
+        arguments: "jexl: result"
       - actor: localNode
         method: runWorkflow
         arguments: ["/home/devteam/works/workflow/process-item.yaml"]
@@ -757,7 +761,7 @@ steps:
     actions:
       - actor: str:body
         method: set
-        arguments: "${result}"
+        arguments: "jexl: result"
       - actor: str:body
         method: escapeJsonStored
       - actor: llm
@@ -824,16 +828,16 @@ steps:
     actions:
       - actor: vllm
         method: setUrl
-        arguments: "${vllm.url}"
+        arguments: "jexl: state.getString('vllm.url')"
       - actor: vllm
         method: setModel
-        arguments: "${vllm.model}"
+        arguments: "jexl: state.getString('vllm.model')"
       - actor: ocr
         method: loadFile
-        arguments: "${ocr.file}"
+        arguments: "jexl: state.getString('ocr.file')"
       - actor: pairs
         method: openOutput
-        arguments: "${pairs.file}"
+        arguments: "jexl: state.getString('pairs.file')"
 
   - states: ["3", "4"]
     label: next-page
@@ -858,10 +862,10 @@ steps:
     actions:
       - actor: vllm
         method: segment
-        arguments: "${result}"
+        arguments: "jexl: result"
       - actor: interpreter
         method: putJson
-        arguments: {path: segmented, value: "${result}"}
+        arguments: {path: segmented, value: "jexl: result"}
 
   - states: ["5", "3"]
     label: step1-failed-skip
@@ -875,10 +879,10 @@ steps:
     actions:
       - actor: vllm
         method: toHiragana
-        arguments: "${segmented}"
+        arguments: "jexl: state.getString('segmented')"
       - actor: pairs
         method: writePairs
-        arguments: "${result}"
+        arguments: "jexl: result"
 
   - states: ["8", "3"]
     label: step2-failed-skip
@@ -914,28 +918,28 @@ steps:
     actions:
       - actor: loader
         method: loadJar
-        arguments: "${plugin.jar}"
+        arguments: "jexl: state.getString('plugin.jar')"
 
   - states: ["1", "2"]
     label: create-actor
     actions:
       - actor: loader
         method: createChild
-        arguments: ["ROOT", "worker", "${worker.class}"]
+        arguments: ["ROOT", "worker", "jexl: state.getString('worker.class')"]
 
   - states: ["2", "3"]
     label: configure
     actions:
       - actor: worker
         method: configure
-        arguments: "${config}"
+        arguments: "jexl: state.getString('config')"
 
   - states: ["3", "end"]
     label: run
     actions:
       - actor: worker
         method: run
-        arguments: "${input}"
+        arguments: "jexl: state.getString('input')"
 
   - states: ["!end", "end"]
     label: catch-all
@@ -978,7 +982,7 @@ steps:
     actions:
       - actor: llm
         method: setUrl
-        arguments: "${llm.url}"
+        arguments: "jexl: state.getString('llm.url')"
 
   - states: ["3", "4"]
     label: build-prompt
@@ -988,7 +992,7 @@ steps:
         arguments: "Reply in Japanese."
       - actor: promptBuilder
         method: addMessage
-        arguments: "${user.message}"
+        arguments: "jexl: state.getString('user.message')"
 
   - states: ["4", "loop"]
     label: init-counter
@@ -1013,7 +1017,7 @@ steps:
     actions:
       - actor: llm
         method: prompt
-        arguments: "${result}"
+        arguments: "jexl: result"
       - actor: calc
         method: inc
 
