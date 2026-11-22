@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -1631,6 +1632,12 @@ public class Interpreter {
      *       arguments: [0.05, 0.02, 0.5]
      * }</pre>
      *
+     * <p>Each child's work runs on the ManagedThreadPool's real threads, never on commonPool.
+     * Called on a thread that is not one of the pool's real threads, such as the interpreter's
+     * mailbox virtual thread, the children run in parallel and the calling thread waits. Called on
+     * one of the pool's real threads, which is where a workflow step's {@code this.apply} runs,
+     * the children run on that real thread one after another.</p>
+     *
      * @param actionDefinition JSON string containing actor, method, and arguments
      * @return ActionResult indicating success or failure
      * @since 2.9.0
@@ -1662,19 +1669,26 @@ public class Interpreter {
                 return new ActionResult(false, "No actors matched pattern: " + actorPattern);
             }
 
-            logger.info(String.format("Applying method '%s' to %d actors matching '%s' (parallel)",
+            logger.info(String.format("Applying method '%s' to %d actors matching '%s'",
                 methodName, matchedActors.size(), actorPattern));
 
             // Thread-safe collections for gathering results
             AtomicInteger successCount = new AtomicInteger(0);
             Map<String, String> failures = new ConcurrentHashMap<>();
 
-            // Create async tasks for all actors
+            // Each child's work is given to the ManagedThreadPool through the child actor,
+            // ask(action, pool); nothing here runs on commonPool. Called on a thread that is not
+            // one of the pool's real threads (the interpreter's mailbox virtual thread, say), the
+            // children run in parallel on the pool's real threads and this thread waits for them.
+            // Called on one of the pool's real threads, as a workflow step reaches it through
+            // InterpreterIIAR, ask runs each child right here, one after another (ActorRef's inline
+            // rule): no parallelism, but no pool real thread waits for work queued behind itself.
+            ExecutorService pool = system.getManagedThreadPool();
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             final String finalArgs = args;
 
             for (IIActorRef<?> actor : matchedActors) {
-                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                CompletableFuture<Void> future = actor.<Void>ask(unused -> {
                     try {
                         ActionResult result = actor.callByActionName(methodName, finalArgs);
                         if (!result.isSuccess()) {
@@ -1688,11 +1702,20 @@ public class Interpreter {
                         }
                     } catch (Throwable t) {
                         // An Error is this child's failure like an exception. A fatal one is noted
-                        // too, and then rethrown: it fails this future, and the join below rethrows it.
+                        // too, and then rethrown: it fails this future and goes on out of apply,
+                        // straight from ask on a pool real thread, from the join below otherwise.
                         failures.put(actor.getName(), ActionResult.errorText(t, actor.getName() + "." + methodName));
                         logger.log(Level.WARNING, "Exception on " + actor.getName(), t);
                         ActionResult.rethrowIfFatal(t);
                     }
+                    return null;
+                }, pool).exceptionally(t -> {
+                    // The child's work never ran: the child is closed, or the pool dropped the task
+                    // when the system terminated. That is this child's failure. A fatal error goes
+                    // on to the join below.
+                    ActionResult.rethrowIfFatal(t);
+                    failures.putIfAbsent(actor.getName(), ActionResult.errorText(t, actor.getName() + "." + methodName));
+                    return null;
                 });
                 futures.add(future);
             }
