@@ -66,7 +66,29 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
 
     private final IIActorSystem actorSystem;
     private final ScheduledExecutorService executor;
-    private final ConcurrentHashMap<String, ScheduledFuture<?>> scheduledTasks;
+    private final ConcurrentHashMap<String, ScheduledTask> scheduledTasks;
+
+    /**
+     * One scheduled task: the executor's future for its ticks and whether it has been cancelled.
+     * A task is registered under its id before its tick exists, so the map always holds the task
+     * whose ticks can run, and a once-task takes out only itself when it is done.
+     */
+    private static final class ScheduledTask {
+        final String taskId;
+        volatile ScheduledFuture<?> tick;
+        volatile boolean cancelled;
+
+        ScheduledTask(String taskId) {
+            this.taskId = taskId;
+        }
+
+        /** Stops further ticks; a run in progress is not interrupted. */
+        boolean cancel() {
+            cancelled = true;
+            ScheduledFuture<?> current = tick;
+            return current == null || current.cancel(false);
+        }
+    }
 
     /**
      * Constructs a new WorkflowScheduler with the specified actor system.
@@ -129,11 +151,15 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
     public String scheduleAtFixedRate(String taskId, String targetActorName,
                                        String actionName, String actionArgs,
                                        long initialDelay, long period, TimeUnit unit) {
-        ScheduledFuture<?> task = executor.scheduleAtFixedRate(() -> {
-            executeOnActor(taskId, targetActorName, actionName, actionArgs);
-        }, initialDelay, period, unit);
-
+        ScheduledTask task = new ScheduledTask(taskId);
         registerTask(taskId, task);
+        arm(task, executor.scheduleAtFixedRate(() -> {
+            if (task.cancelled) {
+                stopTick(task);
+                return;
+            }
+            executeOnActor(taskId, targetActorName, actionName, actionArgs);
+        }, initialDelay, period, unit));
 
         logger.log(Level.INFO, String.format(
             "Scheduled at fixed rate: %s -> %s.%s (initial=%d, period=%d %s)",
@@ -178,11 +204,15 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
     public String scheduleWithFixedDelay(String taskId, String targetActorName,
                                           String actionName, String actionArgs,
                                           long initialDelay, long delay, TimeUnit unit) {
-        ScheduledFuture<?> task = executor.scheduleWithFixedDelay(() -> {
-            executeOnActor(taskId, targetActorName, actionName, actionArgs);
-        }, initialDelay, delay, unit);
-
+        ScheduledTask task = new ScheduledTask(taskId);
         registerTask(taskId, task);
+        arm(task, executor.scheduleWithFixedDelay(() -> {
+            if (task.cancelled) {
+                stopTick(task);
+                return;
+            }
+            executeOnActor(taskId, targetActorName, actionName, actionArgs);
+        }, initialDelay, delay, unit));
 
         logger.log(Level.INFO, String.format(
             "Scheduled with fixed delay: %s -> %s.%s (initial=%d, delay=%d %s)",
@@ -205,15 +235,18 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
     public String scheduleOnce(String taskId, String targetActorName,
                                 String actionName, String actionArgs,
                                 long delay, TimeUnit unit) {
-        ScheduledFuture<?> task = executor.schedule(() -> {
-            try {
-                executeOnActor(taskId, targetActorName, actionName, actionArgs);
-            } finally {
-                scheduledTasks.remove(taskId);
-            }
-        }, delay, unit);
-
+        ScheduledTask task = new ScheduledTask(taskId);
         registerTask(taskId, task);
+        arm(task, executor.schedule(() -> {
+            try {
+                if (!task.cancelled) {
+                    executeOnActor(taskId, targetActorName, actionName, actionArgs);
+                }
+            } finally {
+                // only this task: a task scheduled later under the same id stays registered
+                scheduledTasks.remove(taskId, task);
+            }
+        }, delay, unit));
 
         logger.log(Level.INFO, String.format(
             "Scheduled once: %s -> %s.%s (delay=%d %s)",
@@ -229,9 +262,9 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
      * @return true if the task was found and cancelled, false otherwise
      */
     public boolean cancelTask(String taskId) {
-        ScheduledFuture<?> task = scheduledTasks.remove(taskId);
+        ScheduledTask task = scheduledTasks.remove(taskId);
         if (task != null) {
-            boolean cancelled = task.cancel(false);
+            boolean cancelled = task.cancel();
             logger.log(Level.INFO, cancelled ?
                 "Cancelled: " + taskId :
                 "Task already completed or cancelled: " + taskId);
@@ -257,8 +290,12 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
      * @return true if the task exists and is not cancelled, false otherwise
      */
     public boolean isScheduled(String taskId) {
-        ScheduledFuture<?> task = scheduledTasks.get(taskId);
-        return task != null && !task.isCancelled() && !task.isDone();
+        ScheduledTask task = scheduledTasks.get(taskId);
+        if (task == null || task.cancelled) {
+            return false;
+        }
+        ScheduledFuture<?> tick = task.tick;
+        return tick == null || (!tick.isCancelled() && !tick.isDone());
     }
 
     /**
@@ -269,7 +306,7 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
         logger.log(Level.INFO, "Shutting down workflow scheduler, cancelling " +
             scheduledTasks.size() + " scheduled tasks");
 
-        scheduledTasks.values().forEach((ScheduledFuture<?> task) -> task.cancel(false));
+        scheduledTasks.values().forEach(ScheduledTask::cancel);
         scheduledTasks.clear();
 
         executor.shutdown();
@@ -357,11 +394,32 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
         }
     }
 
-    private void registerTask(String taskId, ScheduledFuture<?> task) {
-        ScheduledFuture<?> oldTask = scheduledTasks.put(taskId, task);
+    /** Registers a task before its tick exists, replacing and cancelling any task with the same id. */
+    private void registerTask(String taskId, ScheduledTask task) {
+        ScheduledTask oldTask = scheduledTasks.put(taskId, task);
         if (oldTask != null) {
-            oldTask.cancel(false);
+            oldTask.cancel();
             logger.log(Level.INFO, "Replaced existing scheduled task: " + taskId);
+        }
+    }
+
+    /**
+     * Sets {@code tick} as the task's tick, and cancels it if the task was cancelled meanwhile.
+     * A cancel sets {@code cancelled} and then reads {@code tick}; this sets {@code tick} and then
+     * reads {@code cancelled}. Both are volatile, so one side sees the other and the tick stops.
+     */
+    private static void arm(ScheduledTask task, ScheduledFuture<?> tick) {
+        task.tick = tick;
+        if (task.cancelled) {
+            tick.cancel(false);
+        }
+    }
+
+    /** Cancels the tick of a cancelled task from inside it; before arm() has set it, arm() does. */
+    private static void stopTick(ScheduledTask task) {
+        ScheduledFuture<?> self = task.tick;
+        if (self != null) {
+            self.cancel(false);
         }
     }
 
