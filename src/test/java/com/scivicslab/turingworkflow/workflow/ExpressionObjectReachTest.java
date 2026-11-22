@@ -1,6 +1,7 @@
 package com.scivicslab.turingworkflow.workflow;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -79,5 +80,44 @@ class ExpressionObjectReachTest {
         runs.run(ExpressionRuns.recording(jacksonWrites(file)), 5);
 
         assertFalse(Files.exists(file), "the expression wrote " + file);
+    }
+
+    /** An object an actor wraps, with a method a workflow must not be able to call from an expression. */
+    public static final class Guarded {
+        private boolean called;
+
+        public String reveal() {
+            called = true;
+            return "revealed";
+        }
+    }
+
+    @Test
+    @DisplayName("actors.get does not answer the object the actor wraps")
+    void actorsGet_answersNotTheWrappedObject() {
+        Guarded guarded = new Guarded();
+        runs.system.addIIActor(new IIActorRef<Guarded>("guarded", guarded, runs.system) {});
+        WorkflowExpressions expressions = new WorkflowExpressions(runs.system);
+
+        Object answered = expressions.evaluate("actors.get('guarded')");
+        assertFalse(answered instanceof Guarded, "actors.get answered the wrapped object");
+
+        assertThrows(RuntimeException.class, () -> expressions.evaluate("actors.get('guarded').reveal()"));
+        assertFalse(guarded.called, "the expression called a method of the wrapped object");
+    }
+
+    @Test
+    @DisplayName("actors.get does not create the actor it names")
+    void actorsGet_ofAnUnregisteredName_createsNothing() {
+        WorkflowExpressions expressions = new WorkflowExpressions(runs.system);
+
+        for (String name : new String[] {"out", "parallel-map", "parallel-map:x"}) {
+            try {
+                expressions.evaluate("actors.get('" + name + "')");
+            } catch (RuntimeException failed) {
+                // failing the expression is an acceptable answer for a missing name
+            }
+            assertFalse(runs.system.hasIIActor(name), "actors.get created '" + name + "'");
+        }
     }
 }

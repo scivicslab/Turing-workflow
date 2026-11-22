@@ -47,12 +47,12 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     private static final ActionSchemaRegistry SCHEMAS = new ActionSchemaRegistry();
 
     /**
-     * The object this actor wraps, for an expression to reach.
+     * The object this actor wraps, for Java code that holds this adapter.
      *
-     * <p>{@code ActorRef} keeps it as a protected field, so only a subclass can hand it out.
-     * {@link WorkflowExpressions} needs it because an expression must reach the wrapped object's
-     * typed methods; going through {@code callByActionName} would return an
-     * {@link com.scivicslab.pojoactor.action.ActionResult}, whose value is text.</p>
+     * <p>{@code ActorRef} keeps it as a protected field, so only a subclass can hand it out. An
+     * adapter's actions call the plain object through it, and tests read it back. A workflow's
+     * expression does not reach it: {@code actors.get(name)} answers a
+     * {@link WorkflowExpressions.ActorView}, the actor's last result and state.</p>
      *
      * <p>Reading it here does not go through the mailbox. Actions invoked by name do not either,
      * so this adds no sharing that was not already present.</p>

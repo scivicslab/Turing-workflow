@@ -33,6 +33,7 @@ import org.apache.commons.jexl3.MapContext;
 import org.apache.commons.jexl3.introspection.JexlPermissions;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.scivicslab.pojoactor.core.ActorRef;
 import com.scivicslab.pojoactor.core.JsonState;
 
 
@@ -42,7 +43,8 @@ import com.scivicslab.pojoactor.core.JsonState;
  * <p>An expression reads values and keeps their type: {@code state.getInt("i", 0)} is an
  * {@code int}, not the text {@code "3"}. What it may call is a fixed list, {@code ARGUMENT_METHODS}
  * for an action's arguments and {@code STATE_METHODS} for the patterns in {@code states}; it cannot
- * create an object, read or write a file, or call a method of an object an actor wraps.</p>
+ * create an object, read or write a file, or call a method of an object an actor wraps; another
+ * actor is read through {@code actors.get(name)}, which answers an {@link ActorView}.</p>
  *
  * <h2>Why a lookup rather than names in scope</h2>
  * Actor names carry characters an expression cannot use as an identifier — {@code node:web-1} has a
@@ -54,6 +56,8 @@ import com.scivicslab.pojoactor.core.JsonState;
  * state.getInt("i", 0) + 1                  // arithmetic on a stored number, still a number
  * "processed: " + state.getString("item")    // text built from a stored value
  * actors.has("node:web-1")                   // whether an actor of that name exists
+ * actors.get("node:web-1").result            // what that actor's last action answered
+ * actors.get("node:web-1").state.getString("host")  // a value that actor stored
  * result                                     // what the previous action answered
  * state.get("dir")                           // a value this actor stored
  * state.getInt("chunk.size", 0)              // the same, read as a whole number
@@ -77,7 +81,8 @@ public final class WorkflowExpressions {
      * {@code DynamicActorLoaderActor} built inside the expression loaded a jar and ran it
      * ({@code ExpressionReach_261122_oo01}). So the set is built from nothing, and holds what the
      * expressions in the workflows written so far call — {@code state}'s readers, the Jackson node a
-     * list arrives as, and text — and nothing that writes.</p>
+     * list arrives as, and text — and nothing that writes. {@code actors.get(name)} answers an
+     * {@link ActorView}, the actor's last result and its state, not the object the actor wraps.</p>
      *
      * <p>A type stands for its subclasses: {@code state.select(...)} answers an {@code ArrayNode} or an
      * {@code ObjectNode}, never a {@code JsonNode} itself. The names exclude every method of those
@@ -85,6 +90,7 @@ public final class WorkflowExpressions {
      */
     private static final Map<Class<?>, Set<String>> ARGUMENT_METHODS = methods(
             Lookup.class, Set.of("get", "has"),
+            ActorView.class, Set.of("getResult", "getState"),
             JsonState.class, Set.of("select", "getString", "getInt", "getLong", "getDouble",
                     "getBoolean", "get", "has"),
             JsonNode.class, Set.of("size", "get", "asText", "isArray", "toString"),
@@ -325,28 +331,81 @@ public final class WorkflowExpressions {
     public final class Lookup {
 
         /**
+         * Answers what an expression may read of the actor named {@code name}.
+         *
+         * <p>Lookup only: an unregistered name answers {@code null} and is not created, not even
+         * for the names {@code IIActorSystem.getIIActor} makes on demand ({@code out},
+         * {@code parallel-map}). An expression that created an actor would have no one to remove it
+         * ({@code LookupThatCreates_260914_oo01}).</p>
+         *
          * @param name the actor's registered name, for example {@code "counter"}
-         * @return the object that actor wraps, or {@code null} when no actor has that name or the
-         *         actor wraps nothing
+         * @return a read-only view of that actor, or {@code null} when no actor has that name
          * @throws IllegalArgumentException when {@code name} is a built-in value actor removed in
          *         5.0.0 ({@link IIActorSystem#removedValueActorReason}); the argument then fails
          *         with that reason instead of calling a method on nothing
          */
-        public Object get(String name) {
-            String removed = IIActorSystem.removedValueActorReason(name);
-            if (removed != null && !system.hasIIActor(name)) {
-                throw new IllegalArgumentException(removed);
+        public ActorView get(String name) {
+            ActorRef<?> actor = system.getActor(name);
+            if (actor == null) {
+                String removed = IIActorSystem.removedValueActorReason(name);
+                if (removed != null) {
+                    throw new IllegalArgumentException(removed);
+                }
+                return null;
             }
-            IIActorRef<?> actor = system.getIIActor(name);
-            return actor == null ? null : actor.wrapped();
+            return new ActorView(actor);
         }
 
         /**
          * @param name the actor's registered name
-         * @return whether an actor with that name exists
+         * @return whether an actor with that name exists, that is, whether {@link #get} answers one
          */
         public boolean has(String name) {
-            return system.hasIIActor(name);
+            return system.getActor(name) != null;
+        }
+    }
+
+    /**
+     * What an expression may read of an actor: the result of its last action, and its stored state.
+     *
+     * <p>Not the object the actor wraps. Every public method of that object would be a call away, and
+     * an object chosen by whoever registered the actor — a loader, a file writer, the interpreter
+     * itself — is not something a workflow's text should drive. What the actor answered and what it
+     * stored are values, read here with the readers on the allow-list; nothing here changes the
+     * actor.</p>
+     *
+     * <pre>{@code
+     * actors.get("worker").result                      // what its last action answered
+     * actors.get("worker").state.getString("output")   // a value it stored
+     * }</pre>
+     */
+    public static final class ActorView {
+
+        private final ActorRef<?> actor;
+
+        ActorView(ActorRef<?> actor) {
+            this.actor = actor;
+        }
+
+        /**
+         * @return the text of the actor's last action result, or {@code null} when it has none;
+         *         {@code .result} in an expression
+         */
+        public String getResult() {
+            return actor.getLastResultValue();
+        }
+
+        /**
+         * @return the actor's stored state, on which an expression may call only the readers;
+         *         {@code .state} in an expression
+         */
+        public JsonState getState() {
+            return actor.json();
+        }
+
+        @Override
+        public String toString() {
+            return "actor " + actor.getName();
         }
     }
 }

@@ -88,6 +88,40 @@ class WorkflowExpressionsTest {
     }
 
     @Nested
+    @DisplayName("another actor, read through actors.get")
+    class AnotherActor {
+
+        @Test
+        @DisplayName("its last result is readable")
+        void result_isReadable() {
+            holding("worker", "s", "x").setLastResultValue("ACCEPT");
+
+            assertEquals("ACCEPT", expressions.evaluate("actors.get('worker').result"));
+            assertEquals("ACCEPT", expressions.evaluate("actors.get('worker').getResult()"));
+        }
+
+        @Test
+        @DisplayName("what it stored is readable, with its type")
+        void state_isReadable() {
+            holding("worker", "n", 3);
+
+            assertEquals(4, expressions.evaluate("actors.get('worker').state.getInt('n', 0) + 1"));
+        }
+
+        @Test
+        @DisplayName("what it stored cannot be changed")
+        void state_cannotBeWritten() {
+            IIActorRef<Object> worker = holding("worker", "n", 3);
+
+            assertThrows(RuntimeException.class,
+                    () -> expressions.evaluate("actors.get('worker').state.put('n', 9)"));
+            assertThrows(RuntimeException.class,
+                    () -> expressions.evaluate("actors.get('worker').state.clear()"));
+            assertEquals(3, worker.json().getInt("n", 0));
+        }
+    }
+
+    @Nested
     @DisplayName("the workflow's own position")
     class OwnPosition {
 
