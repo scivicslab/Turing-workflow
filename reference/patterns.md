@@ -73,25 +73,25 @@ steps:
 
 ---
 
-### 5.3 Reading an actor's value with `actors.get(...)`
+### 5.3 Reading a value from the workflow's own state
 
 ```yaml
-name: calc-demo
+name: state-demo
 
 steps:
   - states: ["0", "1"]
     label: set-counter
     actions:
-      - actor: calc:i
-        method: set
-        arguments: "42"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: 42}
 
   - states: ["1", "end"]
     label: print-counter
     actions:
       - actor: out
         method: print
-        arguments: "jexl: 'Counter is ' + actors.get('calc:i').toString()"
+        arguments: "jexl: 'Counter is ' + state.getInt('i', 0)"
 
   - states: ["!end", "end"]
     label: catch-all
@@ -213,10 +213,10 @@ steps:
 
 ---
 
-### 5.6 Conditional branching — by `str` content check
+### 5.6 Conditional branching — by a text check with `onlyIf`
 
 ```yaml
-name: str-condition
+name: text-condition
 
 params:
   build:
@@ -225,14 +225,11 @@ params:
 steps:
   - states: ["0", "full-mode"]
     label: check-all
-    note: "str:mode contains 'all' → full path"
+    note: "the build mode contains 'all' → full path"
     actions:
-      - actor: str:mode
-        method: set
-        arguments: "jexl: state.getString('build')"
-      - actor: str:mode
-        method: contains
-        arguments: "all"
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getString('build', '').contains('all')"
 
   - states: ["0", "selective-mode"]
     label: fallback-selective
@@ -322,13 +319,13 @@ steps:
 
 ---
 
-### 5.9 Loop — `calc` counter + actor index exhaustion
+### 5.9 Loop — an index in the state + actor index exhaustion
 
 `promptBuilder.getWarning(index)` returns `false` when index is out of range.
 Any actor method with the same contract can be used in place of `getWarning`.
 
 ```yaml
-name: calc-counter-loop
+name: index-loop
 
 steps:
   - states: ["0", "1"]
@@ -360,11 +357,11 @@ steps:
 
   - states: ["3", "loop"]
     label: setup
-    note: "initialize counter to 0"
+    note: "initialize the index to 0"
     actions:
-      - actor: calc:i
-        method: set
-        arguments: "0"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: 0}
 
   - states: ["loop", "process"]
     label: get-item
@@ -372,7 +369,7 @@ steps:
     actions:
       - actor: promptBuilder
         method: getWarning
-        arguments: "jexl: actors.get('calc:i').toString()"
+        arguments: {index: "jexl: state.getInt('i', 0)"}
 
   - states: ["loop", "end"]
     label: loop-done
@@ -389,8 +386,9 @@ steps:
       - actor: out
         method: print
         arguments: "jexl: 'Warning: ' + result"
-      - actor: calc:i
-        method: inc
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: "jexl: state.getInt('i', 0) + 1"}
 
   - states: ["!end", "end"]
     label: catch-all
@@ -532,7 +530,7 @@ steps:
 
 ### 5.12 Sub-workflow — basic call via `NodeActor.runWorkflow`
 
-**Note:** Named `calc:` instances are shared between parent and child — use distinct names in sub-workflows (e.g., `calc:sub_i`).
+**Note:** The parent and the child each keep their own state (`this`). Data passed between them goes through the shared `vars` actor (5.13).
 
 **sub-greeting.yaml:**
 ```yaml
@@ -598,7 +596,7 @@ steps:
 
 ---
 
-### 5.13 Sub-workflow — data passing via shared actors
+### 5.13 Sub-workflow — data passing via `vars`
 
 **process-item.yaml (sub-workflow):**
 ```yaml
@@ -607,19 +605,19 @@ name: process-item
 steps:
   - states: ["0", "1"]
     label: read-and-process
-    note: "read from str:input"
+    note: "read the input the parent put in vars"
     actions:
       - actor: out
         method: print
-        arguments: "jexl: 'Processing: ' + actors.get('str:input').get()"
+        arguments: "jexl: 'Processing: ' + actors.get('vars').get('input')"
 
   - states: ["1", "end"]
     label: write-output
-    note: "write result to str:output for parent to read"
+    note: "put the result in vars for the parent to read"
     actions:
-      - actor: str:output
+      - actor: vars
         method: set
-        arguments: "jexl: 'Processed: ' + actors.get('str:input').get()"
+        arguments: ["output", "jexl: 'Processed: ' + actors.get('vars').get('input')"]
 
   - states: ["!end", "end"]
     label: catch-all
@@ -654,11 +652,11 @@ steps:
 
   - states: ["2", "3"]
     label: set-input
-    note: "write input to shared actor before calling sub-workflow"
+    note: "put the input in vars before calling the sub-workflow"
     actions:
-      - actor: str:input
+      - actor: vars
         method: set
-        arguments: "jexl: state.getString('input_file')"
+        arguments: ["input", "jexl: state.getString('input_file')"]
 
   - states: ["3", "4"]
     label: run-sub
@@ -669,11 +667,11 @@ steps:
 
   - states: ["4", "end"]
     label: read-output
-    note: "sub-workflow wrote its result to str:output"
+    note: "the sub-workflow put its result in vars"
     actions:
       - actor: out
         method: print
-        arguments: "jexl: 'Result: ' + actors.get('str:output').get()"
+        arguments: "jexl: 'Result: ' + actors.get('vars').get('output')"
 
   - states: ["!end", "end"]
     label: catch-all
@@ -708,23 +706,23 @@ steps:
 
   - states: ["2", "loop"]
     label: init-counter
+    note: "the items are in the state at items (filled before this step)"
     actions:
-      - actor: calc:i
-        method: set
-        arguments: "0"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: 0}
 
   - states: ["loop", "run-sub"]
-    label: get-item
-    note: "got item → call sub-workflow"
+    label: take-item
+    note: "an item is left at index i → call sub-workflow"
     actions:
-      - actor: list:items
-        method: get
-        arguments:
-          index: "jexl: actors.get('calc:i').get()"
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getInt('i', 0) < state.select('items').size()"
 
   - states: ["loop", "end"]
     label: loop-done
-    note: "index out of range → done"
+    note: "onlyIf was false → done"
     actions:
       - actor: out
         method: print
@@ -734,14 +732,15 @@ steps:
     label: process-item
     note: "set input, call sub-workflow, increment"
     actions:
-      - actor: str:input
+      - actor: vars
         method: set
-        arguments: "jexl: result"
+        arguments: ["input", "jexl: state.select('items').get(state.getInt('i', 0)).asText()"]
       - actor: localNode
         method: runWorkflow
         arguments: ["/home/devteam/works/workflow/process-item.yaml"]
-      - actor: calc:i
-        method: inc
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: "jexl: state.getInt('i', 0) + 1"}
 
   - states: ["!end", "end"]
     label: catch-all
@@ -754,20 +753,18 @@ steps:
 
 ---
 
-### 5.15 Safe JSON embedding with `str`
+### 5.15 Safe JSON embedding with a YAML map
+
+Write the arguments as a YAML map whose values are `jexl:` expressions. The engine evaluates each
+value on its own and builds the JSON, so a result with quotes or newlines arrives intact.
 
 ```yaml
   - states: ["5", "6"]
-    label: escape-and-send
+    label: send
     actions:
-      - actor: str:body
-        method: set
-        arguments: "jexl: result"
-      - actor: str:body
-        method: escapeJsonStored
       - actor: llm
         method: callAgent
-        arguments: "jexl: '{\"agent\": \"reviewer\", \"prompt\": \"' + actors.get('str:body').get() + '\"}'"
+        arguments: {agent: reviewer, prompt: "jexl: result"}
 ```
 
 ---
@@ -998,9 +995,9 @@ steps:
   - states: ["4", "loop"]
     label: init-counter
     actions:
-      - actor: calc
-        method: set
-        arguments: "0"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: 0}
 
   # Loop: get item at index, process, increment
   - states: ["loop", "process"]
@@ -1008,7 +1005,7 @@ steps:
     actions:
       - actor: promptBuilder
         method: getWarning
-        arguments: "jexl: actors.get('calc').toString()"
+        arguments: {index: "jexl: state.getInt('i', 0)"}
 
   - states: ["loop", "5"]
     label: loop-done
@@ -1019,8 +1016,9 @@ steps:
       - actor: llm
         method: prompt
         arguments: "jexl: result"
-      - actor: calc
-        method: inc
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: "jexl: state.getInt('i', 0) + 1"}
 
   - states: ["5", "end"]
     label: finalize

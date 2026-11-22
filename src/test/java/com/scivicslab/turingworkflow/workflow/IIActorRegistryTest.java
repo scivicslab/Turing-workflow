@@ -75,10 +75,10 @@ class IIActorRegistryTest {
     void aFreeBuiltInNameIsStillMadeOnFirstUse() {
         IIActorSystem system = new IIActorSystem("one-registry-builtin");
         try {
-            IIActorRef<?> made = system.getIIActor("calc:i");
+            IIActorRef<?> made = system.getIIActor("out");
 
-            assertNotNull(made, "calc:i is made on first use");
-            assertSame(made, system.getActor("calc:i"), "and is in the one registry, under that name");
+            assertNotNull(made, "out is made on first use");
+            assertSame(made, system.getActor("out"), "and is in the one registry, under that name");
         } finally {
             system.terminate();
         }
@@ -94,10 +94,10 @@ class IIActorRegistryTest {
     void aBuiltInNameTakenByAPlainActorIsNotOverwritten() {
         IIActorSystem system = new IIActorSystem("one-registry-squatted");
         try {
-            ActorRef<String> plain = system.actorOf("calc", "a plain actor of that name");
+            ActorRef<String> plain = system.actorOf("out", "a plain actor of that name");
 
-            assertNull(system.getIIActor("calc"), "no actor a workflow can call is registered as calc");
-            assertSame(plain, system.getActor("calc"), "and what is registered as calc is untouched");
+            assertNull(system.getIIActor("out"), "no actor a workflow can call is registered as out");
+            assertSame(plain, system.getActor("out"), "and what is registered as out is untouched");
         } finally {
             system.terminate();
         }

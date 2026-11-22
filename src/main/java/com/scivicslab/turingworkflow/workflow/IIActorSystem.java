@@ -137,9 +137,11 @@ public class IIActorSystem extends ActorSystem {
      * actors, so this reads the one registry and tells them apart by type
      * ({@code TwoRegistriesForOneActorPopulation_260914_oo01}).</p>
      *
-     * <p>A built-in name ({@code calc}, {@code list}, {@code out}, {@code str},
-     * {@code parallel-map}) with nothing registered under it is still made here, which is what
-     * existing workflows are written against ({@code LookupThatCreates_260914_oo01}). A name an
+     * <p>A built-in name ({@code out}, {@code parallel-map}) with nothing registered under it is
+     * still made here ({@code LookupThatCreates_260914_oo01}); {@code out}, the supported way to
+     * print, is made without a warning. The value actors {@code calc}, {@code list} and {@code str}
+     * were removed in 5.0.0, and nothing is made under their names
+     * ({@link #removedValueActorReason}). A name an
      * ordinary actor already holds is never made over: answering {@code null} says the name is
      * taken, where making one would replace an actor someone else registered, at a lookup.</p>
      *
@@ -159,10 +161,45 @@ public class IIActorSystem extends ActorSystem {
             return null;
         }
         addIIActor(made);
-        LOGGER.warning("Actor '" + name + "' was made at a lookup because no transition created it."
-                + " Create it with loader.createChild, or keep the value in the workflow's own"
-                + " state (LookupThatCreates_260914_oo01).");
+        if (!OUT_NAME.equals(name)) {
+            LOGGER.warning("Actor '" + name + "' was made at a lookup because no transition created it."
+                    + " Create it with loader.createChild (LookupThatCreates_260914_oo01).");
+        }
         return (IIActorRef<T>) made;
+    }
+
+    /** The built-in actor that prints. It is made on first use and is the supported way to print. */
+    private static final String OUT_NAME = "out";
+
+    /** The built-in value actors removed in 5.0.0. A workflow keeps values in its own state. */
+    private static final List<String> REMOVED_VALUE_ACTORS = List.of("calc", "list", "str");
+
+    /**
+     * Says why {@code name} cannot be used, when it names a built-in value actor removed in 5.0.0.
+     *
+     * <p>{@code calc}, {@code list} and {@code str}, plain or with a {@code :name}, were made on
+     * first use until 4.x. A workflow now keeps such a value in its own state, written with
+     * {@code this.putJson} or {@code this.appendJson} and read with {@code jexl: state...}
+     * ({@code ActorsAsVariables_260914_oo01}). Nothing is made under these names, so a workflow
+     * written for 4.x fails at the action that names one, with this reason, instead of running on
+     * an actor that silently appeared.</p>
+     *
+     * @param name an actor name a workflow used
+     * @return the reason, without the {@code error:} prefix or the place; {@code null} when the
+     *         name is not one of the removed actors
+     */
+    public static String removedValueActorReason(String name) {
+        if (name == null) {
+            return null;
+        }
+        for (String removed : REMOVED_VALUE_ACTORS) {
+            if (name.equals(removed) || name.startsWith(removed + ":")) {
+                return "the built-in actor '" + name + "' was removed in 5.0.0; keep the value in the"
+                        + " workflow's own state instead: write it with this.putJson or this.appendJson,"
+                        + " read it with jexl: state...";
+            }
+        }
+        return null;
     }
 
     /**
@@ -183,17 +220,12 @@ public class IIActorSystem extends ActorSystem {
     }
 
     private IIActorRef<?> tryAutoCreate(String name) {
-        if (name.equals("calc") || name.startsWith("calc:")) {
-            return new CalcActor(name, this);
+        if (removedValueActorReason(name) != null) {
+            // Removed in 5.0.0: nothing is made under these names, not even by a factory.
+            return null;
         }
-        if (name.equals("list") || name.startsWith("list:")) {
-            return new ListActor(name, this);
-        }
-        if (name.equals("out")) {
+        if (name.equals(OUT_NAME)) {
             return new OutActor(name, this);
-        }
-        if (name.equals("str") || name.startsWith("str:")) {
-            return new StringActor(name, this);
         }
         if (name.equals("parallel-map") || name.startsWith("parallel-map:")) {
             return new ParallelMapActor(name, this);

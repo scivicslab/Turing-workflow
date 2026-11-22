@@ -46,7 +46,7 @@ class RemoveChildTest {
 
     @Test
     void anActorItCreated_leavesTheRegistryAndItsParent() {
-        createChild("ROOT", "unit-1", "com.scivicslab.turingworkflow.workflow.CalcActor");
+        createChild("ROOT", "unit-1", "com.scivicslab.turingworkflow.workflow.OutActor");
         assertNotNull(system.getIIActor("unit-1"));
 
         ActionResult removed = loader.callByActionName("removeChild", "[\"unit-1\"]");
@@ -59,9 +59,9 @@ class RemoveChildTest {
 
     @Test
     void whatHungBelowItGoesTooRatherThanBeingOrphaned() {
-        createChild("ROOT", "parent", "com.scivicslab.turingworkflow.workflow.CalcActor");
-        createChild("parent", "child", "com.scivicslab.turingworkflow.workflow.CalcActor");
-        createChild("child", "grandchild", "com.scivicslab.turingworkflow.workflow.CalcActor");
+        createChild("ROOT", "parent", "com.scivicslab.turingworkflow.workflow.OutActor");
+        createChild("parent", "child", "com.scivicslab.turingworkflow.workflow.OutActor");
+        createChild("child", "grandchild", "com.scivicslab.turingworkflow.workflow.OutActor");
 
         ActionResult removed = loader.callByActionName("removeChild", "[\"parent\"]");
 
@@ -74,7 +74,7 @@ class RemoveChildTest {
 
     @Test
     void theParentMayBeNamedFirst_asCreateChildTakesIt() {
-        createChild("ROOT", "unit-1", "com.scivicslab.turingworkflow.workflow.CalcActor");
+        createChild("ROOT", "unit-1", "com.scivicslab.turingworkflow.workflow.OutActor");
 
         ActionResult removed = loader.callByActionName("removeChild", "[\"ROOT\",\"unit-1\"]");
 
@@ -96,7 +96,7 @@ class RemoveChildTest {
         // (ActorRef<ConversationTab>, registered by createChild) is in the plain one, its
         // ChatSession (a ChatSessionIIAR, registered by addIIActor) in the interpreter-facing one.
         com.scivicslab.pojoactor.core.ActorRef<String> tab = system.actorOf("tab-1", "a plain actor");
-        createChild("ROOT", "tab-1.chat", "com.scivicslab.turingworkflow.workflow.CalcActor");
+        createChild("ROOT", "tab-1.chat", "com.scivicslab.turingworkflow.workflow.OutActor");
         tab.getNamesOfChildren().add("tab-1.chat");
         system.getIIActor("tab-1.chat").setParentName("tab-1");
 

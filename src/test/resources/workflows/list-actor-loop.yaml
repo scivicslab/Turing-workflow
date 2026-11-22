@@ -2,30 +2,38 @@ name: list-actor-loop
 steps:
   - states: ["0", "1"]
     actions:
-      - actor: list:items
-        method: add
+      - actor: this
+        method: appendJson
         arguments:
+          path: items
           value: "Apple"
-      - actor: list:items
-        method: add
+      - actor: this
+        method: appendJson
         arguments:
+          path: items
           value: "Banana"
-      - actor: list:items
-        method: add
+      - actor: this
+        method: appendJson
         arguments:
+          path: items
           value: "Cherry"
   - states: ["1", "loop"]
     actions:
-      - actor: calc:i
-        method: set
+      - actor: this
+        method: putJson
         arguments:
+          path: i
           value: 0
   - states: ["loop", "process"]
     actions:
-      - actor: list:items
-        method: get
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getInt('i', 0) < state.select('items').size()"
+      - actor: this
+        method: appendJson
         arguments:
-          index: "jexl: actors.get('calc:i').get()"
+          path: seen
+          value: "jexl: state.select('items').get(state.getInt('i', 0)).asText()"
   - states: ["loop", "end"]
     actions:
       - actor: out
@@ -34,7 +42,13 @@ steps:
           message: "All items processed."
   - states: ["process", "loop"]
     actions:
-      - actor: calc:count
-        method: inc
-      - actor: calc:i
-        method: inc
+      - actor: this
+        method: putJson
+        arguments:
+          path: count
+          value: "jexl: state.getInt('count', 0) + 1"
+      - actor: this
+        method: putJson
+        arguments:
+          path: i
+          value: "jexl: state.getInt('i', 0) + 1"

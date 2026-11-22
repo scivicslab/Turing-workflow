@@ -50,6 +50,14 @@ public class LoopPatternTest {
         system = new IIActorSystem("loop-pattern-test");
     }
 
+    /** Gives the interpreter the actor it runs as, which a transition reaches as {@code this}. */
+    private InterpreterIIAR runsAs(Interpreter interpreter, String name) {
+        InterpreterIIAR self = new InterpreterIIAR(name, interpreter, system);
+        interpreter.setSelfActorRef(self);
+        system.addIIActor(self);
+        return self;
+    }
+
     @AfterEach
     public void tearDown() {
         if (system != null) {
@@ -190,6 +198,8 @@ public class LoopPatternTest {
             .team(system)
             .build();
 
+        InterpreterIIAR self = runsAs(interpreter, "jexl-counter-main");
+
         InputStream yamlInput = getClass().getResourceAsStream("/workflows/jexl-counter-loop.yaml");
         assertNotNull(yamlInput, "JEXL counter loop YAML should exist");
 
@@ -198,8 +208,8 @@ public class LoopPatternTest {
         ActionResult result = interpreter.runUntilEnd(20);
         assertTrue(result.isSuccess(), "JEXL counter loop should complete successfully");
 
-        ActionResult countResult = system.getIIActor("calc:count").callByActionName("get", null);
-        assertEquals("5", countResult.getResult());
+        // The state number is the counter: the body ran once for each of 0..4.
+        assertEquals(5, self.json().getInt("count", -1));
     }
 
     @Test
@@ -210,16 +220,21 @@ public class LoopPatternTest {
             .team(system)
             .build();
 
+        InterpreterIIAR self = runsAs(interpreter, "list-loop-main");
+
         InputStream yamlInput = getClass().getResourceAsStream("/workflows/list-actor-loop.yaml");
-        assertNotNull(yamlInput, "List actor loop YAML should exist");
+        assertNotNull(yamlInput, "List loop YAML should exist");
 
         interpreter.readYaml(yamlInput);
 
         ActionResult result = interpreter.runUntilEnd(20);
-        assertTrue(result.isSuccess(), "List actor loop should complete successfully");
+        assertTrue(result.isSuccess(), "List loop should complete successfully");
 
-        ActionResult countResult = system.getIIActor("calc:count").callByActionName("get", null);
-        assertEquals("3", countResult.getResult());
+        // Each item was taken once, in order, and the loop left when the list was used up.
+        assertEquals(3, self.json().getInt("count", -1));
+        assertEquals(3, self.json().select("seen").size());
+        assertEquals("Apple", self.json().getString("seen[0]"));
+        assertEquals("Cherry", self.json().getString("seen[2]"));
     }
 
     @Test
@@ -235,6 +250,8 @@ public class LoopPatternTest {
             .team(system)
             .build();
 
+        InterpreterIIAR self = runsAs(interpreter, "cursor-loop-main");
+
         InputStream yamlInput = getClass().getResourceAsStream("/workflows/cursor-loop.yaml");
         assertNotNull(yamlInput, "Cursor loop YAML should exist");
 
@@ -243,8 +260,9 @@ public class LoopPatternTest {
         ActionResult result = interpreter.runUntilEnd(20);
         assertTrue(result.isSuccess(), "Cursor loop should complete successfully");
 
-        ActionResult countResult = system.getIIActor("calc:count").callByActionName("get", null);
-        assertEquals("3", countResult.getResult());
+        // The body ran once per item, and the cursor's failure on the fourth call ended the loop.
+        assertEquals(3, self.json().getInt("count", -1));
+        assertEquals(4, cursor.get(), "three items taken, and a fourth call that found none");
     }
 
     @Test

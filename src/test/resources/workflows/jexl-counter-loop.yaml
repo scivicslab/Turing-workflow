@@ -2,8 +2,11 @@ name: jexl-counter-loop
 steps:
   - states: ["jexl:n < 5", "jexl:n + 1"]
     actions:
-      - actor: calc:count
-        method: inc
+      - actor: this
+        method: putJson
+        arguments:
+          path: count
+          value: "jexl: state.getInt('count', 0) + 1"
   - states: ["jexl:n >= 5", "end"]
     actions:
       - actor: out

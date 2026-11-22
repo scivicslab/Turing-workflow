@@ -91,17 +91,18 @@ An action that declares no `argsType` receives the raw string the engine built: 
 A value that starts with `jexl:` is evaluated as a [JEXL](https://commons.apache.org/proper/commons-jexl/) expression, and the action receives whatever the expression answered — a number stays a number:
 
 ```yaml
-- actor: calc:total
-  method: add
+- actor: this
+  method: putJson
   arguments:
-    operand: "jexl: actors.get('calc:i').get()"
+    path: total
+    value: "jexl: state.getInt('total', 0) + state.getInt('i', 0)"
 ```
 
 The expression is given five things:
 
 | name | what it is |
 |---|---|
-| `actors` | the actors in this system, by name — `actors.get('calc:i')` |
+| `actors` | the actors in this system, by name — `actors.get('vars')` answers the object `vars` wraps |
 | `state` | this actor's `JsonState` |
 | `result` | what the previous action returned |
 | `self` | this actor's own name |

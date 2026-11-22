@@ -13,9 +13,12 @@ package com.scivicslab.turingworkflow.workflow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,28 +27,31 @@ import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
  * Verifies the built-in {@code parallel-map} actor without any LLM: it runs a trivial sub-workflow
- * (str:output = "processed: " + str:input) over an input list, in parallel and in isolated child
- * systems, and collects the results into the output list in input order.
+ * over a list of items, in parallel and in isolated child systems, and answers the results as a
+ * JSON array in item order.
+ *
+ * <p>Each item is in the sub-workflow's own state at {@code input}; the sub-workflow leaves its
+ * answer in its state at {@code output}.</p>
  */
 class ParallelMapActorTest {
 
-    // A self-contained sub-workflow with NO plugins: echoes str:input into str:output.
-    private static final String ECHO_YAML =
-            "name: echo\n"
-          + "steps:\n"
-          + "  - states: [\"0\", \"end\"]\n"
-          + "    label: echo\n"
-          + "    actions:\n"
-          + "      - actor: str:output\n"
-          + "        method: set\n"
-          + "        arguments: \"jexl: 'processed: ' + actors.get('str:input').get()\"\n"
-          + "  - states: [\"!end\", \"end\"]\n"
-          + "    label: catch-all\n"
-          + "    actions:\n"
-          + "      - actor: out\n"
-          + "        method: error\n"
-          + "        arguments:\n"
-          + "          message: \"echo: unexpected state\"\n";
+    /** A self-contained sub-workflow with no plugins: its output is "processed: " + its input. */
+    static final String ECHO_YAML = """
+            name: echo
+            steps:
+              - states: ["0", "end"]
+                label: echo
+                actions:
+                  - actor: this
+                    method: putJson
+                    arguments: {path: output, value: "jexl: 'processed: ' + state.getString('input')"}
+              - states: ["!end", "end"]
+                label: catch-all
+                actions:
+                  - actor: out
+                    method: error
+                    arguments: {message: "echo: unexpected state"}
+            """;
 
     @Test
     void mapsEachItemThroughSubWorkflowInOrder(@TempDir Path dir) throws Exception {
@@ -54,25 +60,68 @@ class ParallelMapActorTest {
 
         IIActorSystem system = new IIActorSystem("pm-test");
         try {
-            IIActorRef<?> in = system.getIIActor("list:in");
-            in.callByActionName("add", "{\"value\":\"alpha\"}");
-            in.callByActionName("add", "{\"value\":\"beta\"}");
-            in.callByActionName("add", "{\"value\":\"gamma\"}");
-
             String args = new JSONObject()
                     .put("subWorkflow", echo.toAbsolutePath().toString())
-                    .put("inputList", "list:in")
-                    .put("outputList", "list:out")
+                    .put("items", new JSONArray().put("alpha").put("beta").put("gamma"))
                     .put("maxParallel", 3)
                     .toString();
             ActionResult r = system.getIIActor("parallel-map").callByActionName("run", args);
-            assertTrue(r.isSuccess(), r.getResult());
 
-            IIActorRef<?> out = system.getIIActor("list:out");
-            assertEquals("3", out.callByActionName("size", "").getResult());
-            assertEquals("processed: alpha", out.callByActionName("get", "{\"index\":0}").getResult());
-            assertEquals("processed: beta", out.callByActionName("get", "{\"index\":1}").getResult());
-            assertEquals("processed: gamma", out.callByActionName("get", "{\"index\":2}").getResult());
+            assertTrue(r.isSuccess(), r.getResult());
+            assertEquals("[\"processed: alpha\",\"processed: beta\",\"processed: gamma\"]", r.getResult());
+        } finally {
+            system.terminateIIActors();
+        }
+    }
+
+    @Test
+    void aWorkflowMapsAListFromItsStateAndStoresTheAnswers(@TempDir Path dir) throws Exception {
+        Path echo = dir.resolve("echo.yaml");
+        Files.writeString(echo, ECHO_YAML);
+
+        IIActorSystem system = new IIActorSystem("pm-workflow-test");
+        try {
+            Interpreter interpreter = new Interpreter.Builder().loggerName("pm-workflow-test").team(system).build();
+            InterpreterIIAR self = new InterpreterIIAR("main", interpreter, system);
+            interpreter.setSelfActorRef(self);
+            system.addIIActor(self);
+
+            String yaml = """
+                    name: map-a-list
+                    steps:
+                      - states: ["0", "1"]
+                        actions:
+                          - actor: this
+                            method: appendJson
+                            arguments: {path: xs, value: alpha}
+                          - actor: this
+                            method: appendJson
+                            arguments: {path: xs, value: beta}
+                          - actor: this
+                            method: appendJson
+                            arguments: {path: xs, value: gamma}
+                      - states: ["1", "2"]
+                        actions:
+                          - actor: parallel-map
+                            method: run
+                            arguments:
+                              subWorkflow: "%s"
+                              items: "jexl: state.select('xs')"
+                              maxParallel: 3
+                      - states: ["2", "end"]
+                        actions:
+                          - actor: this
+                            method: putJson
+                            arguments: {path: ys, value: "jexl: result"}
+                    """.formatted(echo.toAbsolutePath());
+            interpreter.readYaml(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
+            ActionResult run = interpreter.runUntilEnd(10);
+
+            assertTrue(run.isSuccess(), run.getResult());
+            assertEquals(3, self.json().select("ys").size(), self.json().toString());
+            assertEquals("processed: alpha", self.json().getString("ys[0]"));
+            assertEquals("processed: beta", self.json().getString("ys[1]"));
+            assertEquals("processed: gamma", self.json().getString("ys[2]"));
         } finally {
             system.terminateIIActors();
         }

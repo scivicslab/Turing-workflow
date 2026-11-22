@@ -141,30 +141,27 @@ expression calls that object's own methods. The call happens at argument-evaluat
 (before the current action runs), and the value keeps its type. The interpreter does not expand
 `$(actor.method)`; write it as an expression instead.
 
-| Actor | `actors.get(...)` answers | Its value as text | Its value as a value |
-|---|---|---|---|
-| `calc`, `calc:i` | the accumulator | `actors.get('calc:i').toString()` → `3` | `actors.get('calc:i').get()` → `3.0` |
-| `str:name` | the text slot | `actors.get('str:name').get()` | (the same; it is text) |
-| `list:items` | the `List` of strings | — | `actors.get('list:items').get(0)` |
+| Actor | `actors.get(...)` answers | Example |
+|---|---|---|
+| `vars` | the map of variables | `actors.get('vars').get('input')` |
+| a plugin actor | the object it wraps | `actors.get('nodeGroup').getNodeCount()` (a method of that object) |
 
 ```yaml
-arguments: "jexl: actors.get('calc').toString()"                    # current value of calc, as text
-arguments: "jexl: actors.get('calc:i').get()"                       # named instance, as a number
-arguments: "jexl: 'value is ' + actors.get('calc').toString() + ' now'"   # mixed with literal text
-arguments: "jexl: actors.get('list:items').get(0)"                  # index 0 of list:items
+arguments: "jexl: actors.get('vars').get('input')"                        # a variable, as text
+arguments: "jexl: 'value is ' + actors.get('vars').get('input') + ' now'"  # mixed with literal text
 ```
 
-A value an actor answers only through an action (for example `list:items.join`) is not a method
-of the wrapped object: call the action, then read its message with `jexl: result`.
+A value the workflow keeps for itself belongs in its own state (section 3.2) and is read with
+`jexl: state...`, not through an actor. A value an actor answers only through an action is not a
+method of the wrapped object: call the action, then read its message with `jexl: result`.
 
-### Expression mechanisms — four types
+### Expression mechanisms — three types
 
 | Where used | Syntax | Engine |
 |-----------|--------|--------|
 | Action `arguments` | `jexl:expr` — `state` (the interpreter's state, `-P` values included), `result`, `currentState`, `actors` | Apache Commons JEXL 3 |
 | `states` patterns | `*`, `!state`, `a\|b\|c`, `>=5` | Java string matching |
 | `states` patterns | `jexl:expr` | Apache Commons JEXL 3 |
-| `calc.eval` argument | JEXL expression | Apache Commons JEXL 3 |
 
 The last result — the `message` of the previous `ActionResult` — is the variable `result` in a
 `jexl:` argument; the interpreter's state is `state`.
@@ -208,9 +205,6 @@ states: ["jexl:n >= 10", "end"]          # exit when counter reaches 10
 states: ["jexl:currentState == 'error'", "end"] # string comparison
 states: [">=10", "end"]                  # shorthand numeric comparison (no jexl: prefix)
 ```
-
-**`calc.eval` JEXL context** — when `calc.eval` is called, the variable `v` holds the current
-value of the `calc` actor. Example: `arguments: "v * 2 + 1"` doubles the counter then adds 1.
 
 ---
 
@@ -335,10 +329,18 @@ string or a list (`ActorsAsVariables_260914_oo01`).
 | `vars` | キーバリューの変数ストア（`-P`で事前投入） |
 | `interpreter` / `this` | ワークフローエンジン自己参照・JSON状態管理・サブワークフロー呼び出し |
 | `parallel-map` | サブワークフローの並列展開 |
+| `out` | 出力（`print`・`printf`・`error`） |
 
-`calc` / `calc:name`、`list` / `list:name`、`str` / `str:name`、`out` の4つは、JSON 状態が無かった
-時期の値の置き場である。名前で引かれた時点で作られるが、そのとき警告が記録される。新しい
-ワークフローでは 3.2 の書き方を使い、既存のものは順次そちらへ移す。
+`out` は、組み込みで文字を出力する正式な方法である。名前で引かれた時点で作られ、警告は記録されない。
+catch-all の遷移の記録にも `actor: out` を使う。
+
+値の置き場だった `calc` / `calc:name`、`list` / `list:name`、`str` / `str:name` は 5.0.0 で削除した。
+値はワークフロー自身の状態に置き、`this.putJson`・`this.appendJson` で書き、`jexl: state...` で読む
+（3.2）。これらの名前を書いたアクションは偽になり、`result` には次の理由が入る。
+
+```
+error: the built-in actor 'calc:i' was removed in 5.0.0; keep the value in the workflow's own state instead: write it with this.putJson or this.appendJson, read it with jexl: state... (in calc:i.inc)
+```
 
 詳細は `reference/built-in-actors.md` を参照
 
@@ -488,7 +490,7 @@ steps:
 
 ---
 
-### 5.10 Loop — `list:` actor full iteration
+### 5.10 Loop — every item of a list in the workflow's state
 
 ```yaml
 name: list-loop
@@ -496,38 +498,37 @@ name: list-loop
 steps:
   - states: ["0", "1"]
     label: add-items
-    note: "populate list (or fill it elsewhere before this step)"
+    note: "fill the list in the state (or read it from somewhere before this step)"
     actions:
-      - actor: list:items
-        method: add
-        arguments: "Apple"
-      - actor: list:items
-        method: add
-        arguments: "Banana"
-      - actor: list:items
-        method: add
-        arguments: "Cherry"
+      - actor: this
+        method: appendJson
+        arguments: {path: items, value: "Apple"}
+      - actor: this
+        method: appendJson
+        arguments: {path: items, value: "Banana"}
+      - actor: this
+        method: appendJson
+        arguments: {path: items, value: "Cherry"}
 
   - states: ["1", "loop"]
     label: setup
-    note: "initialize counter"
+    note: "start the index at 0"
     actions:
-      - actor: calc:i
-        method: set
-        arguments: "0"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: 0}
 
   - states: ["loop", "process"]
-    label: get-item
-    note: "got item at index i → process"
+    label: take-item
+    note: "an item is left at index i"
     actions:
-      - actor: list:items
-        method: get
-        arguments:
-          index: "jexl: actors.get('calc:i').get()"
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getInt('i', 0) < state.select('items').size()"
 
   - states: ["loop", "end"]
     label: loop-done
-    note: "index out of range → all done"
+    note: "onlyIf was false: every item is done"
     actions:
       - actor: out
         method: print
@@ -535,13 +536,13 @@ steps:
 
   - states: ["process", "loop"]
     label: process-and-next
-    note: "result holds the item"
     actions:
       - actor: out
         method: print
-        arguments: "jexl: 'Processing: ' + result"
-      - actor: calc:i
-        method: inc
+        arguments: "jexl: 'Processing: ' + state.select('items').get(state.getInt('i', 0)).asText()"
+      - actor: this
+        method: putJson
+        arguments: {path: i, value: "jexl: state.getInt('i', 0) + 1"}
 
   - states: ["!end", "end"]
     label: catch-all
@@ -628,16 +629,17 @@ When asked to generate a Turing workflow YAML, follow these rules:
     `promptBuilder`. Use JEXL state expressions (section 5.5) when the state itself is the counter.
     Never hardcode repeated steps when a loop will do.
 12. **Create every actor you use** in the workflow's first transitions and remove them in its last
-    (section 3.1). `calc`, `list`, `str` and `out` still appear on first use, but each one logs a
-    warning saying no transition created it.
+    (section 3.1). `out`, the supported way to print, is made on first use without a warning.
+    `calc`, `list` and `str` were removed in 5.0.0: an action naming one of them is false, and its
+    `result` says what to write instead (section 3.3).
 13. **Reading values in arguments**: `jexl: result` passes the previous action's output;
-    `jexl: actors.get('calc').get()` calls a method on the object an actor wraps and keeps its type;
+    `jexl: actors.get('vars').get('key')` calls a method on the object an actor wraps and keeps its type;
     `jexl: state.getString('key')` reads the interpreter's state. The interpreter expands neither
     `${...}` nor `$(...)` in arguments.
 14. **Do not paste `result` into a JSON string argument** when the result may contain
     newlines or quotes — pass a YAML map whose values are `jexl:` expressions (each is evaluated
-    on its own, e.g. `{path: body, value: "jexl: result"}`), use `str:name.escapeJsonStored`
-    (section 5.8), or store with `this.putJson` and read back with `jexl: state.getString('key')`.
+    on its own, e.g. `{path: body, value: "jexl: result"}`), or store with `this.putJson` and
+    read back with `jexl: state.getString('key')`.
 15. **Missing plugins**: if a required plugin is not installed, instruct the user to:
     `git clone` the repository, `rm -rf target`, `mvn install` the plugin, then retry.
 16. **Sub-workflow calls**: use `actor: this, method: call, arguments: ["sub.yaml"]` to invoke a

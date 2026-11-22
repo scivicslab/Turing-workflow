@@ -236,7 +236,11 @@ public class Interpreter {
             // Fail if no actors found
             if (actors.isEmpty()) {
                 logger.warning("Actor not found: " + actorPath);
-                ActionResult notFoundResult = new ActionResult(false, "Actor not found: " + actorPath);
+                // A built-in value actor removed in 5.0.0 says so, and what to write instead.
+                String removed = IIActorSystem.removedValueActorReason(actorPath);
+                ActionResult notFoundResult = new ActionResult(false, removed != null
+                        ? "error: " + removed + " (in " + actorPath + "." + action + ")"
+                        : "Actor not found: " + actorPath);
                 recordLastResult(notFoundResult);
                 logger.exiting(CLASS_NAME, "action", notFoundResult);
                 return notFoundResult;
@@ -342,10 +346,10 @@ public class Interpreter {
     /**
      * Evaluates one argument written as an expression, keeping the type of what it answers.
      *
-     * <p>{@code $(actor.method)} answers through {@link com.scivicslab.pojoactor.action.ActionResult},
-     * whose value is text, so a number arrives as {@code "3"} and an argument declared as a number
-     * is refused. An expression reaches the object an actor wraps and calls its own methods, so
-     * {@code jexl: actors.get("calc:i").get()} arrives as {@code 3.0}.</p>
+     * <p>An action's own message is text, so a number read from it arrives as {@code "3"} and an
+     * argument declared as a number is refused. An expression reads the workflow's state, or the
+     * object an actor wraps, and keeps the type: {@code jexl: state.getInt('i', 0)} arrives as
+     * {@code 3}.</p>
      *
      * @param expression the expression, without the {@code jexl:} marker
      * @return whatever it evaluates to; {@code JSONObject.NULL} when it answers nothing
@@ -354,7 +358,7 @@ public class Interpreter {
     private Object evaluateArgumentExpression(String expression) {
         try {
             Object outcome = new WorkflowExpressions(system, selfActorRef, currentState).evaluate(expression);
-            return outcome == null ? JSONObject.NULL : outcome;
+            return outcome == null ? JSONObject.NULL : jsonValueOf(outcome);
         } catch (ArgumentExpressionException e) {
             throw e;
         } catch (Throwable t) {
@@ -367,6 +371,32 @@ public class Interpreter {
     }
 
     /**
+     * Turns what an expression answered into the value the action's JSON holds.
+     *
+     * <p>{@code state.select(...)} answers a Jackson node. The JSON handed to the action is built
+     * with org.json, which does not know that type and would write the node as its text, so a list
+     * read from the workflow's state would arrive as the string {@code "[\"a\",\"b\"]"}. A node is
+     * therefore converted to the org.json value of the same shape: a list to a JSON array, an object
+     * to a JSON object, text to its text, a number to its number. Any other value is passed as it
+     * is.</p>
+     *
+     * @param outcome what the expression answered; not {@code null}
+     * @return the value to put in the action's JSON
+     */
+    private static Object jsonValueOf(Object outcome) {
+        if (outcome instanceof com.fasterxml.jackson.databind.JsonNode node) {
+            if (node.isMissingNode() || node.isNull()) {
+                return JSONObject.NULL;
+            }
+            if (node.isTextual()) {
+                return node.asText();
+            }
+            return new org.json.JSONTokener(node.toString()).nextValue();
+        }
+        return outcome;
+    }
+
+    /**
      * An argument the workflow wrote as an expression that could not be evaluated.
      *
      * <p>Carried out of argument conversion so that the action is not run at all. The expression
@@ -376,7 +406,23 @@ public class Interpreter {
      */
     private static class ArgumentExpressionException extends RuntimeException {
         ArgumentExpressionException(String expression, Throwable cause) {
-            super("argument expression failed: " + expression + " -- " + cause.getMessage(), cause);
+            super("argument expression failed: " + expression + " -- " + innermostMessage(cause), cause);
+        }
+
+        /**
+         * The message of the innermost cause that has one. The expression engine wraps what a
+         * method threw in an exception of its own, whose message only names the method
+         * ({@code JEXL error : get}); the reason the workflow needs is inside it.
+         */
+        private static String innermostMessage(Throwable cause) {
+            String message = cause.getMessage();
+            java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            for (Throwable t = cause; t != null && seen.add(t); t = t.getCause()) {
+                if (t.getMessage() != null && !t.getMessage().isBlank()) {
+                    message = t.getMessage();
+                }
+            }
+            return message;
         }
     }
 

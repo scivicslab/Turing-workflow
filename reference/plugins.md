@@ -119,9 +119,9 @@ Sections with no entries are omitted. `build` fails if `addMessage` was not call
 - states: ["7", "verify-loop"]
   label: init-verify-counter
   actions:
-    - actor: calc
-      method: set
-      arguments: "0"
+    - actor: this
+      method: putJson
+      arguments: {path: i, value: 0}
 
 # Try to get warning at current index; success → verify, failure → done
 - states: ["verify-loop", "verify-check"]
@@ -129,7 +129,7 @@ Sections with no entries are omitted. `build` fails if `addMessage` was not call
   actions:
     - actor: promptBuilder
       method: getWarning
-      arguments: "jexl: actors.get('calc').toString()"
+      arguments: {index: "jexl: state.getInt('i', 0)"}
 
 - states: ["verify-loop", "end"]
   label: verify-done
@@ -149,8 +149,9 @@ Sections with no entries are omitted. `build` fails if `addMessage` was not call
 - states: ["verify-next", "verify-loop"]
   label: increment-counter
   actions:
-    - actor: calc
-      method: inc
+    - actor: this
+      method: putJson
+      arguments: {path: i, value: "jexl: state.getInt('i', 0) + 1"}
 ```
 
 ---
@@ -180,9 +181,9 @@ which creates `NodeActor` instances for each node in an inventory group.
 **Sub-workflow pattern with `NodeActor.runWorkflow`:**
 
 `NodeActor` can also be used as a local sub-workflow runner. Unlike `this.call` (which shares the
-`vars` actor), `NodeActor.runWorkflow` shares the entire `IIActorSystem` — all built-in actors
-(`calc:`, `str:`, `list:`, `interpreter`) are shared between parent and child. Pass data by
-writing to a named `str:` actor before the call and reading from another after.
+`vars` actor), `NodeActor.runWorkflow` shares the entire `IIActorSystem` between parent and
+child. Each workflow still keeps its own state. Pass data by putting it in `vars` before the call
+and reading what the child put there after.
 
 ```yaml
 # Parent workflow
@@ -202,11 +203,11 @@ writing to a named `str:` actor before the call and reading from another after.
 
 - states: ["2", "3"]
   label: set-input
-  note: "write input to shared actor before calling sub-workflow"
+  note: "put the input in vars before calling the sub-workflow"
   actions:
-    - actor: str:input
+    - actor: vars
       method: set
-      arguments: "jexl: state.getString('my_param')"
+      arguments: ["input", "jexl: state.getString('my_param')"]
 
 - states: ["3", "4"]
   label: run-sub
@@ -217,11 +218,11 @@ writing to a named `str:` actor before the call and reading from another after.
 
 - states: ["4", "end"]
   label: read-output
-  note: "sub-workflow wrote its result to str:output"
+  note: "the sub-workflow put its result in vars"
   actions:
     - actor: out
       method: print
-      arguments: "jexl: 'Result: ' + actors.get('str:output').get()"
+      arguments: "jexl: 'Result: ' + actors.get('vars').get('output')"
 
 - states: ["!end", "end"]
   label: catch-all
@@ -231,8 +232,9 @@ writing to a named `str:` actor before the call and reading from another after.
       arguments: "Workflow ended unexpectedly."
 ```
 
-**Warning:** Named `calc:` instances (e.g., `calc:i`) are shared between parent and child.
-Use distinct names in sub-workflows (e.g., `calc:sub_i`) to avoid counter conflicts.
+**Note:** The parent and the child keep separate states, so an index such as `i` in one does
+not disturb the other. Names in `vars` are shared: use distinct names for the values each side
+writes.
 
 ---
 

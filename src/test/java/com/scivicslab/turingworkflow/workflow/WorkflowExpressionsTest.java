@@ -32,6 +32,32 @@ class WorkflowExpressionsTest {
         system.terminateIIActors();
     }
 
+    /** An object an actor wraps, holding one value and answering it through its own methods. */
+    public static final class Held {
+        private final Object value;
+
+        Held(Object value) {
+            this.value = value;
+        }
+
+        public Object get() {
+            return value;
+        }
+
+        public int length() {
+            return value.toString().length();
+        }
+
+        public boolean contains(String part) {
+            return value.toString().contains(part);
+        }
+    }
+
+    /** Registers an actor named {@code name} wrapping a {@link Held} of {@code value}. */
+    private void hold(String name, Object value) {
+        system.addIIActor(new IIActorRef<Held>(name, new Held(value), system) {});
+    }
+
     @Nested
     @DisplayName("types survive")
     class TypesSurvive {
@@ -39,20 +65,20 @@ class WorkflowExpressionsTest {
         @Test
         @DisplayName("a number reached through an actor arrives as a number")
         void number_staysNumber() {
-            system.getIIActor("calc:i").callByActionName("set", "{\"value\":3}");
+            hold("counter", 3.0);
 
-            Object outcome = expressions.evaluate("actors.get(\"calc:i\").get()");
+            Object outcome = expressions.evaluate("actors.get(\"counter\").get()");
 
-            assertInstanceOf(Double.class, outcome, "the accumulator holds a double");
+            assertInstanceOf(Double.class, outcome, "the object holds a double");
             assertEquals(3.0, (Double) outcome, 1e-9);
         }
 
         @Test
         @DisplayName("arithmetic on it is done as arithmetic, not as text")
         void number_canBeComputedWith() {
-            system.getIIActor("calc:i").callByActionName("set", "{\"value\":3}");
+            hold("counter", 3.0);
 
-            Object outcome = expressions.evaluate("actors.get(\"calc:i\").get() + 1");
+            Object outcome = expressions.evaluate("actors.get(\"counter\").get() + 1");
 
             assertInstanceOf(Number.class, outcome);
             assertEquals(4.0, ((Number) outcome).doubleValue(), 1e-9,
@@ -62,9 +88,9 @@ class WorkflowExpressionsTest {
         @Test
         @DisplayName("a length arrives as a whole number")
         void length_staysInteger() {
-            system.getIIActor("str:name").callByActionName("set", "hello");
+            hold("name", "hello");
 
-            Object outcome = expressions.evaluate("actors.get(\"str:name\").length()");
+            Object outcome = expressions.evaluate("actors.get(\"name\").length()");
 
             assertInstanceOf(Integer.class, outcome);
             assertEquals(5, outcome);
@@ -73,9 +99,9 @@ class WorkflowExpressionsTest {
         @Test
         @DisplayName("a test arrives as a boolean")
         void contains_staysBoolean() {
-            system.getIIActor("str:name").callByActionName("set", "hello world");
+            hold("name", "hello world");
 
-            Object outcome = expressions.evaluate("actors.get(\"str:name\").contains(\"world\")");
+            Object outcome = expressions.evaluate("actors.get(\"name\").contains(\"world\")");
 
             assertInstanceOf(Boolean.class, outcome);
             assertEquals(true, outcome);
@@ -159,17 +185,17 @@ class WorkflowExpressionsTest {
         @Test
         @DisplayName("a name containing a colon is reached, being passed as text")
         void nameWithColon_isReached() {
-            system.getIIActor("str:with:colons").callByActionName("set", "ok");
-            assertEquals("ok", expressions.evaluate("actors.get(\"str:with:colons\").get()"));
+            hold("node:with:colons", "ok");
+            assertEquals("ok", expressions.evaluate("actors.get(\"node:with:colons\").get()"));
         }
 
         @Test
         @DisplayName("text built from an actor's value is still text")
         void interpolation_staysText() {
-            system.getIIActor("str:in").callByActionName("set", "alpha");
+            hold("in", "alpha");
 
             Object outcome = expressions.evaluate(
-                    "\"processed: \" + actors.get(\"str:in\").get()");
+                    "\"processed: \" + actors.get(\"in\").get()");
 
             assertEquals("processed: alpha", outcome);
         }
@@ -186,10 +212,10 @@ class WorkflowExpressionsTest {
         @Test
         @DisplayName("a method the object does not have raises rather than answering nothing")
         void unknownMethod_raises() {
-            system.getIIActor("str:x").callByActionName("set", "text");
+            hold("x", "text");
 
             assertThrows(RuntimeException.class,
-                    () -> expressions.evaluate("actors.get(\"str:x\").noSuchMethod()"));
+                    () -> expressions.evaluate("actors.get(\"x\").noSuchMethod()"));
         }
 
         @Test
@@ -208,9 +234,9 @@ class WorkflowExpressionsTest {
         @Test
         @DisplayName("existence can be asked without reaching the object")
         void has_reportsExistence() {
-            system.getIIActor("str:present").callByActionName("set", "x");
-            assertEquals(true,  expressions.evaluate("actors.has(\"str:present\")"));
-            assertEquals(false, expressions.evaluate("actors.has(\"str:absent\")"));
+            hold("present", "x");
+            assertEquals(true,  expressions.evaluate("actors.has(\"present\")"));
+            assertEquals(false, expressions.evaluate("actors.has(\"absent\")"));
         }
     }
 }

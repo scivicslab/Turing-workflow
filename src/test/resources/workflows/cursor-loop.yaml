@@ -2,9 +2,10 @@ name: cursor-loop
 steps:
   - states: ["0", "loop"]
     actions:
-      - actor: calc:count
-        method: set
+      - actor: this
+        method: putJson
         arguments:
+          path: count
           value: 0
   - states: ["loop", "process"]
     actions:
@@ -18,5 +19,8 @@ steps:
           message: "All items processed."
   - states: ["process", "loop"]
     actions:
-      - actor: calc:count
-        method: inc
+      - actor: this
+        method: putJson
+        arguments:
+          path: count
+          value: "jexl: state.getInt('count', 0) + 1"

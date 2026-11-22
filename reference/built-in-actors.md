@@ -84,118 +84,37 @@ Every actor inherits these actions from `IIActorRef`:
 | `clearJson` | `""` | Clears actor's JSON state |
 | `printJson` | `""` | Prints actor's JSON state to stdout |
 
-### 3.6 `calc` / `calc:name` — Numeric variable
+### 3.6 `calc`, `list`, `str` — removed in 5.0.0
 
-> **値の置き場としては使わない。** この4つ（`calc`・`list`・`str`・`out`）は、引数の中で計算する
-> 手段が無かった時期のものである。`jexl:` の式が入ってからは、数も文字列もリストもワークフロー
-> 自身の JSON 状態に置けて、`putJson`・`appendJson` で書き、`jexl: state...` で読める（SKILL.md
-> 3.2、`ActorsAsVariables_260914_oo01`）。名前で引かれた時点で作られる動作は互換のために残って
-> いるが、そのとき「どの遷移もこのアクターを作っていない」という警告が記録される。
->
-> | ここに書いてある書き方 | 置き換え |
-> |---|---|
-> | `calc:i.set "0"` | `this.putJson {path: i, value: 0}` |
-> | `calc:i.inc` | `this.putJson {path: i, value: "jexl: state.getInt('i',0)+1"}` |
-> | `list:items.add` | `this.appendJson {path: items, value: ...}` |
-> | `list:items.size` | `jexl: state.select('items').size()` |
-> | `str:msg.set` | `this.putJson {path: msg, value: ...}` |
-> | `out.print` | `this.print` |
+The value actors `calc` / `calc:name`, `list` / `list:name` and `str` / `str:name` were removed in
+5.0.0. They came from the time before `jexl:` expressions, when an argument could not compute
+anything. A workflow keeps its numbers, text and lists in its own JSON state, writes them with
+`putJson` and `appendJson`, and reads them with `jexl: state...` (SKILL.md 3.2,
+`ActorsAsVariables_260914_oo01`).
 
-Auto-created on first use. Named instances (`calc:x`, `calc:count`) are independent.
-Initial value is `0`. Returns the new value as a string after each operation.
+Nothing is made under these names any more. An action that names one of them is false, and the
+next transition reads this reason in `jexl: result`:
 
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `set` | `"3.14"` | Set value |
-| `get` | `""` | Read value |
-| `inc` | `""` | Increment by 1 |
-| `dec` | `""` | Decrement by 1 |
-| `add` | `"5"` | Add to value |
-| `sub` | `"5"` | Subtract from value |
-| `mul` | `"2"` | Multiply value |
-| `div` | `"2"` | Divide value |
-| `mod` | `"3"` | Modulo |
-| `reset` | `""` | Reset to 0 |
-| `eval` | `"v * 2 + 1"` | Evaluate JEXL expression; `v` = current value |
-
-```yaml
-- actor: calc:i
-  method: set
-  arguments: "0"
-- actor: calc:i
-  method: inc
+```
+error: the built-in actor 'calc:i' was removed in 5.0.0; keep the value in the workflow's own state instead: write it with this.putJson or this.appendJson, read it with jexl: state... (in calc:i.inc)
 ```
 
-### 3.7 `list` / `list:name` — String list
+| Written for 4.x | Write instead |
+|---|---|
+| `calc:i.set "0"` | `this.putJson {path: i, value: 0}` |
+| `calc:i.inc` | `this.putJson {path: i, value: "jexl: state.getInt('i', 0) + 1"}` |
+| `calc:i.add "5"` | `this.putJson {path: i, value: "jexl: state.getInt('i', 0) + 5"}` |
+| `jexl: actors.get('calc:i').get()` | `jexl: state.getInt('i', 0)` (or `state.getDouble('x', 0)` for a fraction) |
+| `list:items.add "a"` | `this.appendJson {path: items, value: "a"}` |
+| `list:items.size` | `jexl: state.select('items').size()` |
+| `list:items.get {index: n}` | `jexl: state.select('items').get(n).asText()` |
+| `str:msg.set "..."` | `this.putJson {path: msg, value: "..."}` |
+| `jexl: actors.get('str:msg').get()` | `jexl: state.getString('msg')` |
+| `str:body.escapeJsonStored`, then pasting it into a JSON text | pass a YAML map whose values are `jexl:` expressions; each value is built as JSON by the engine |
 
-Auto-created on first use. Named instances (`list:files`, `list:errors`) are independent.
-Wraps `ArrayList<String>`.
+### 3.7 `out` — Print output
 
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `add` | `"value"` | Append element |
-| `get` | `"0"` (index; defaults to 0 if blank) | Get element by index |
-| `set` | `[index, "value"]` | Replace element at index |
-| `remove` | `"0"` (index) | Remove element by index |
-| `size` | `""` | List length |
-| `isEmpty` | `""` | True if empty |
-| `clear` | `""` | Remove all elements |
-| `contains` | `"value"` | True if element exists |
-| `indexOf` | `"value"` | Index of element (-1 if not found) |
-| `join` | `","` (separator; defaults to `", "` if blank) | Join elements with separator |
-
-```yaml
-- actor: list:items
-  method: add
-  arguments: "hello"
-- actor: list:items
-  method: join
-  arguments: {separator: ", "}
-- actor: out
-  method: print
-  arguments: "jexl: result"         # prints: hello
-```
-
-### 3.8 `str` / `str:name` — String variable
-
-Auto-created on first use. Named instances (`str:title`, `str:body`) are independent.
-Stores a single mutable string (initial value: `""`).
-
-| Method | Arguments | Description |
-|--------|-----------|-------------|
-| `set` | `"value"` | Set stored string |
-| `get` | `""` | Read stored string |
-| `clear` | `""` | Reset to empty string |
-| `append` | `"text"` | Append text to stored string |
-| `length` | `""` | Character count |
-| `trim` | `""` | Remove leading/trailing whitespace (in-place) |
-| `toUpperCase` | `""` | Convert to uppercase (in-place) |
-| `toLowerCase` | `""` | Convert to lowercase (in-place) |
-| `contains` | `"text"` | True if stored string contains argument |
-| `startsWith` | `"prefix"` | True if stored string starts with prefix |
-| `endsWith` | `"suffix"` | True if stored string ends with suffix |
-| `replace` | `["target", "replacement"]` | Replace all occurrences (in-place) |
-| `substring` | `[start]` or `[start, end]` | Extract substring |
-| `isEmpty` | `""` | True if stored string is empty |
-| `escapeJson` | `"raw text"` | JSON-escape the **argument** (does not modify stored value) |
-| `escapeJsonStored` | `""` | JSON-escape the **stored string** in-place |
-
-**Typical use — safe JSON embedding:**
-```yaml
-# Store LLM response then escape it before embedding in JSON argument
-- actor: str:body
-  method: set
-  arguments: "jexl: result"
-- actor: str:body
-  method: escapeJsonStored
-- actor: llm
-  method: callAgent
-  arguments: "jexl: '{\"agent\": \"reviewer\", \"prompt\": \"' + actors.get('str:body').get() + '\"}'"
-```
-
-### 3.9 `out` — Print output
-
-Auto-created on first use.
+`out` is the supported built-in way to print. It is made on first use, with no warning.
 
 | Method | Arguments | Description |
 |--------|-----------|-------------|
@@ -206,13 +125,13 @@ Auto-created on first use.
 ```yaml
 - actor: out
   method: print
-  arguments: "jexl: 'Done. count=' + actors.get('calc').toString()"
+  arguments: "jexl: 'Done. count=' + state.getInt('count', 0)"
 - actor: out
   method: printf
-  arguments: ["Result: %s (%.2f sec)", "jexl: result", "jexl: actors.get('calc:elapsed').get()"]
+  arguments: ["Result: %s (%.2f sec)", "jexl: result", "jexl: state.getDouble('elapsed', 0)"]
 ```
 
-### 3.10 `this` — Sub-workflow invocation
+### 3.8 `this` — Sub-workflow invocation
 
 Calls another workflow YAML file as a child interpreter. The child shares the same `IIActorSystem`
 as the parent — including the `vars` actor — so variables set with `vars.set` before the call are
@@ -257,3 +176,54 @@ parent's `vars` actor.
   `loader.createChild` for the same actor name may be a no-op or error — design sub-workflows
   to be idempotent when called multiple times, or use uniquely named actors.
 - The last result (`jexl: result`) after `this.call` holds the final output of the sub-workflow.
+
+### 3.9 `parallel-map` — Run a sub-workflow over every item, in parallel
+
+Made on first use as `parallel-map`. Where `this.call` runs one sub-workflow, `parallel-map.run` runs a
+sub-workflow once per item, several at a time, and answers what each run left.
+
+| Method | Arguments | Description |
+|--------|-----------|-------------|
+| `run` | `{subWorkflow, items, maxParallel?, baseDir?}` | Runs `subWorkflow` once per element of `items` (a JSON array); at most `maxParallel` at once (default 6) |
+
+Each item runs in its own isolated actor system, which shares nothing with the caller: the
+sub-workflow loads any plugin it needs itself. The item is put in the sub-workflow's own state at
+`input`, and the sub-workflow leaves its answer in its own state at `output`.
+
+When every item succeeded, the action is true and its result is the JSON array of the answers, in
+item order. The caller stores it with `this.putJson`, and the array is kept as a list:
+
+```yaml
+# Caller: map the list at xs, keep the answers at ys
+- states: ["1", "2"]
+  actions:
+    - actor: parallel-map
+      method: run
+      arguments:
+        subWorkflow: "summarize-one.yaml"
+        items: "jexl: state.select('xs')"
+        maxParallel: 4
+- states: ["2", "3"]
+  actions:
+    - actor: this
+      method: putJson
+      arguments: {path: ys, value: "jexl: result"}
+```
+
+```yaml
+# summarize-one.yaml: read the item at input, leave the answer at output
+- states: ["0", "end"]
+  actions:
+    - actor: this
+      method: putJson
+      arguments: {path: output, value: "jexl: 'processed: ' + state.getString('input')"}
+```
+
+When the sub-workflow failed for any item, the action is false and names each failed item and why:
+
+```
+1 of 3 failed: 1 (beta): error: sub-workflow failed: No matching state transition from '0' ... . parallel-map: mapped 3 item(s)
+```
+
+A fatal error from an item's run (a `VirtualMachineError` other than `StackOverflowError`) is not
+one item's failure: it is rethrown, so the calling workflow records it as its last result and ends.

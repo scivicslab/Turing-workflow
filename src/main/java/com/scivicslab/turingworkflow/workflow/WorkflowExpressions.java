@@ -29,20 +29,18 @@ import org.apache.commons.jexl3.introspection.JexlPermissions;
  *
  * <p>An expression reaches an actor through {@code actors.get(name)}, which answers the object the
  * actor wraps. The object's own methods are then called, so the outcome keeps its type:
- * {@code actors.get("calc:i").get()} is a {@code double}, not the text {@code "3"}.</p>
+ * {@code actors.get("counter").getCount()} is an {@code int}, not the text {@code "3"}.</p>
  *
  * <h2>Why a lookup rather than names in scope</h2>
- * Actor names carry characters an expression cannot use as an identifier — {@code calc:i} has a
+ * Actor names carry characters an expression cannot use as an identifier — {@code node:web-1} has a
  * colon, {@code project1/chat-01.chat} has a slash and a dot. Putting them in scope by name is
  * therefore not possible; the lookup takes the name as text instead.
  *
  * <h2>Examples</h2>
  * <pre>{@code
- * actors.get("calc:i").get()                 // the number that actor holds
- * actors.get("calc:i").get() + 1             // arithmetic on it, still a number
- * actors.get("str:name").get()               // the text that actor holds
- * "processed: " + actors.get("str:in").get() // text built from it
- * actors.get("list:items").size()            // an int
+ * actors.get("counter").getCount()          // a number that actor's object holds
+ * actors.get("counter").getCount() + 1       // arithmetic on it, still a number
+ * "processed: " + actors.get("node").host()  // text built from what an object answers
  * result                                     // what the previous action answered
  * state.get("dir")                           // a value this actor stored
  * state.getInt("chunk.size", 0)              // the same, read as a whole number
@@ -60,7 +58,7 @@ public final class WorkflowExpressions {
      * Packages whose classes an expression may call methods on.
      *
      * <p>JEXL 3.3 refuses reflection outside a permitted set, and its default set does not include
-     * application classes: without this, {@code actors.get("calc:i").get()} answers {@code null}
+     * application classes: without this, {@code actors.get("counter").getCount()} answers {@code null}
      * and nothing says why. Composing onto {@code RESTRICTED} rather than using
      * {@code UNRESTRICTED} keeps JEXL's own refusals in place — {@code java.lang.System} stays out
      * of reach.</p>
@@ -177,11 +175,18 @@ public final class WorkflowExpressions {
     public final class Lookup {
 
         /**
-         * @param name the actor's registered name, for example {@code "calc:i"}
+         * @param name the actor's registered name, for example {@code "counter"}
          * @return the object that actor wraps, or {@code null} when no actor has that name or the
          *         actor wraps nothing
+         * @throws IllegalArgumentException when {@code name} is a built-in value actor removed in
+         *         5.0.0 ({@link IIActorSystem#removedValueActorReason}); the argument then fails
+         *         with that reason instead of calling a method on nothing
          */
         public Object get(String name) {
+            String removed = IIActorSystem.removedValueActorReason(name);
+            if (removed != null && !system.hasIIActor(name)) {
+                throw new IllegalArgumentException(removed);
+            }
             IIActorRef<?> actor = system.getIIActor(name);
             return actor == null ? null : actor.wrapped();
         }

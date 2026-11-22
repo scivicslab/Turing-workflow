@@ -10,13 +10,20 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,54 +32,114 @@ import org.junit.jupiter.api.io.TempDir;
 import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
- * Verifies that {@code parallel-map run} is false when the sub-workflow failed for any item, naming the item and why,
- * while every item's output, a failed item's {@code error: ...} included, is still appended in input order.
+ * Verifies how {@code parallel-map run} fails. When the sub-workflow failed for any item, the run is
+ * false, naming each failed item and why. A fatal error from an item's run is not one item's failure:
+ * it is recorded as the calling workflow's last result and rethrown out of its run.
  */
-@DisplayName("parallel-map - one failed item makes the run false, naming it; every output is kept")
+@DisplayName("parallel-map - a failed item makes the run false, naming it; a fatal one is rethrown")
 class ParallelMapActorFailureTest {
 
-    // Has no transition for the item "beta", so the sub-workflow fails for that item only.
-    private static final String ALL_BUT_BETA_YAML =
-            "name: all-but-beta\n"
-          + "steps:\n"
-          + "  - states: [\"0\", \"end\"]\n"
-          + "    label: echo-unless-beta\n"
-          + "    actions:\n"
-          + "      - actor: this\n"
-          + "        method: onlyIf\n"
-          + "        arguments: \"jexl: actors.get('str:input').get() != 'beta'\"\n"
-          + "      - actor: str:output\n"
-          + "        method: set\n"
-          + "        arguments: \"jexl: 'processed: ' + actors.get('str:input').get()\"\n";
+    /** Has no transition for the item "beta", so the sub-workflow fails for that item only. */
+    private static final String ALL_BUT_BETA_YAML = """
+            name: all-but-beta
+            steps:
+              - states: ["0", "end"]
+                label: echo-unless-beta
+                actions:
+                  - actor: this
+                    method: onlyIf
+                    arguments: "jexl: state.getString('input') != 'beta'"
+                  - actor: this
+                    method: putJson
+                    arguments: {path: output, value: "jexl: 'processed: ' + state.getString('input')"}
+            """;
+
+    /** Calls a {@link Bomb} for every item, so every item's run ends in a fatal error. */
+    private static final String BOMB_YAML = """
+            name: bomb
+            steps:
+              - states: ["0", "1"]
+                actions:
+                  - actor: loader
+                    method: createChild
+                    arguments: ["ROOT", "bomb", "com.scivicslab.turingworkflow.workflow.ParallelMapActorFailureTest$Bomb"]
+              - states: ["1", "end"]
+                actions:
+                  - actor: bomb
+                    method: explode
+            """;
+
+    /** An actor whose every action throws a test-only fatal error. */
+    public static final class Bomb extends IIActorRef<Object> {
+        public Bomb(String name, IIActorSystem system) {
+            super(name, new Object(), system);
+        }
+
+        @Override
+        public ActionResult callByActionName(String actionName, String args) {
+            throw new ActionErrorTest.TestFatalError("dying in an item");
+        }
+    }
 
     @Test
-    void run_subWorkflowFailsForOneItem_isFalseNamingItAndKeepsEveryOutput(@TempDir Path dir) throws Exception {
+    void run_subWorkflowFailsForOneItem_isFalseNamingIt(@TempDir Path dir) throws Exception {
         Path yaml = dir.resolve("all-but-beta.yaml");
         Files.writeString(yaml, ALL_BUT_BETA_YAML);
 
         IIActorSystem system = new IIActorSystem("pm-failure-test");
         try {
-            IIActorRef<?> in = system.getIIActor("list:in");
-            in.callByActionName("add", "{\"value\":\"alpha\"}");
-            in.callByActionName("add", "{\"value\":\"beta\"}");
-            in.callByActionName("add", "{\"value\":\"gamma\"}");
-
             ActionResult r = system.getIIActor("parallel-map").callByActionName("run", new JSONObject()
                     .put("subWorkflow", yaml.toAbsolutePath().toString())
-                    .put("inputList", "list:in")
-                    .put("outputList", "list:out")
+                    .put("items", new JSONArray().put("alpha").put("beta").put("gamma"))
                     .put("maxParallel", 3)
                     .toString());
 
             assertFalse(r.isSuccess(), r.getResult());
             assertTrue(r.getResult().startsWith("1 of 3 failed: 1 (beta): error: sub-workflow failed: "), r.getResult());
             assertTrue(r.getResult().endsWith(". parallel-map: mapped 3 item(s)"), r.getResult());
-            IIActorRef<?> out = system.getIIActor("list:out");
-            assertEquals("3", out.callByActionName("size", "").getResult());
-            assertEquals("processed: alpha", out.callByActionName("get", "{\"index\":0}").getResult());
-            String failed = out.callByActionName("get", "{\"index\":1}").getResult();
-            assertTrue(failed.startsWith("error: sub-workflow failed: "), failed);
-            assertEquals("processed: gamma", out.callByActionName("get", "{\"index\":2}").getResult());
+            assertFalse(r.getResult().contains("(alpha)") || r.getResult().contains("(gamma)"),
+                    "only the failed item is named: " + r.getResult());
+        } finally {
+            system.terminateIIActors();
+        }
+    }
+
+    @Test
+    void run_fatalErrorFromAnItem_isRecordedAndRethrown(@TempDir Path dir) throws Exception {
+        Path yaml = dir.resolve("bomb.yaml");
+        Files.writeString(yaml, BOMB_YAML);
+
+        IIActorSystem system = new IIActorSystem("pm-fatal-test");
+        try {
+            Interpreter interpreter = new Interpreter.Builder().loggerName("pm-fatal-test").team(system).build();
+            InterpreterIIAR self = new InterpreterIIAR("main", interpreter, system);
+            interpreter.setSelfActorRef(self);
+            system.addIIActor(self);
+            String main = """
+                    name: map-into-a-bomb
+                    steps:
+                      - states: ["0", "end"]
+                        actions:
+                          - actor: parallel-map
+                            method: run
+                            arguments:
+                              subWorkflow: "%s"
+                              items: ["alpha", "beta"]
+                      - states: ["0", "end"]
+                        actions:
+                          - actor: out
+                            method: print
+                            arguments: {message: "the run went on after a fatal error"}
+                    """.formatted(yaml.toAbsolutePath());
+            interpreter.readYaml(new ByteArrayInputStream(main.getBytes(StandardCharsets.UTF_8)));
+
+            ExecutionException e = assertThrows(ExecutionException.class,
+                    () -> CompletableFuture.supplyAsync(() -> interpreter.runUntilEnd(10)).get(30, TimeUnit.SECONDS),
+                    "the fatal error must be rethrown out of the calling run");
+
+            assertInstanceOf(ActionErrorTest.TestFatalError.class, e.getCause());
+            String last = self.getLastResult().getResult();
+            assertTrue(last.startsWith("error: ") && last.contains("TestFatalError: dying in an item"), last);
         } finally {
             system.terminateIIActors();
         }

@@ -14,6 +14,7 @@ import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
 
 import jakarta.validation.constraints.NotNull;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -30,18 +31,21 @@ import java.util.logging.Logger;
  *
  * <p>This is the missing "parallel" primitive of the engine's control vocabulary (sequence / branch /
  * loop / sub-workflow via {@code this}). Where {@code this.call} runs ONE sub-workflow, {@code parallel-map}
- * runs a sub-workflow once per item of a {@code list:} actor, concurrently, and collects the outputs.</p>
+ * runs a sub-workflow once per item of a list, concurrently, and answers the outputs.</p>
  *
  * <h2>Action</h2>
  * <ul>
- *   <li>{@code run} — arguments {@code ["<sub-workflow.yaml>", "<inputList>", "<outputList>", maxParallel?, baseDir?]}.
- *       For each item in {@code inputList} (a {@code list:} actor), runs the sub-workflow in its OWN isolated
- *       child {@link IIActorSystem} so per-task state — and the per-task {@code llm} actor — never collide and
- *       execution is genuinely parallel. The item is seeded into {@code str:input}; the sub-workflow's result is
- *       read from {@code str:output}. Outputs are appended to {@code outputList} in input order; an item whose
- *       sub-workflow failed or threw leaves {@code error: ...} there. The run is true only when every item succeeded;
- *       otherwise it is false with {@code "F of T failed: <index> (<item>): error: ...; ... . parallel-map: mapped T
- *       item(s)"}, following {@code Interpreter.apply}, and the workflow chooses what to do with it.</li>
+ *   <li>{@code run} — arguments {@code {subWorkflow, items, maxParallel?, baseDir?}}. {@code items} is a JSON
+ *       array, usually read from the workflow's own state ({@code items: "jexl: state.select('xs')"}). For each
+ *       item, runs the sub-workflow in its OWN isolated child {@link IIActorSystem} so per-task state — and the
+ *       per-task {@code llm} actor — never collide and execution is genuinely parallel. The item is put in the
+ *       sub-workflow's own state at {@code input}; the sub-workflow leaves its answer in its state at
+ *       {@code output}. When every item succeeded, the run is true and its result is the JSON array of the
+ *       answers in item order, which the workflow stores with {@code this.putJson {path: ys, value: "jexl:
+ *       result"}}. Otherwise it is false with {@code "F of T failed: <index> (<item>): error: ...; ... .
+ *       parallel-map: mapped T item(s)"}, following {@code Interpreter.apply}, and the workflow chooses what to do
+ *       with it. A fatal error from an item's run ({@link ActionResult#fatalIn}) is not one item's failure: it is
+ *       rethrown, so the calling workflow records it and ends.</li>
  * </ul>
  *
  * <p>The sub-workflow must be self-contained (load any plugin it needs via {@code loader} — e.g.
@@ -61,49 +65,30 @@ public class ParallelMapActor extends IIActorRef<Object> {
     }
 
     /**
-     * Which sub-workflow to run over which list, and where to put what it returns.
+     * Which sub-workflow to run over which items.
      *
      * @param subWorkflow the sub-workflow's YAML file name
-     * @param inputList   the name of the list actor holding the items
-     * @param outputList  the name of the list actor the results are appended to
+     * @param items       the items, one sub-workflow run each; each is put in the sub-workflow's state at
+     *                    {@code input}
      * @param maxParallel how many items run at once; six when absent
      * @param baseDir     the directory the sub-workflow runs in; the current directory when absent
      */
-    public record MapArgs(@NotNull String subWorkflow, @NotNull String inputList,
-                          @NotNull String outputList, Integer maxParallel, String baseDir) {}
+    public record MapArgs(@NotNull String subWorkflow, @NotNull List<Object> items,
+                          Integer maxParallel, String baseDir) {}
 
     @Action(value = "run", argsType = MapArgs.class)
     public ActionResult run(MapArgs args) {
         final String subYaml = args.subWorkflow();
-        final String inListName = args.inputList();
-        final String outListName = args.outputList();
         final int maxParallel = args.maxParallel() != null ? args.maxParallel() : DEFAULT_PARALLEL;
         final String baseDir = args.baseDir() != null ? args.baseDir() : ".";
-
-        // Read the input items from the parent's list actor.
-        IIActorRef<?> inList = parentSystem.getIIActor(inListName);
-        if (inList == null) {
-            return new ActionResult(false, "parallel-map.run: input list not found: " + inListName);
-        }
-        int n;
-        try {
-            n = Integer.parseInt(inList.callByActionName("size", "").getResult().trim());
-        } catch (Exception e) {
-            return ActionResult.error(e, "parallel-map.run, reading the size of " + inListName);
-        }
-        List<String> items = new ArrayList<>(n);
-        for (int i = 0; i < n; i++) {
-            ActionResult r = inList.callByActionName("get",
-                    new JSONObject().put("index", i).toString());
-            items.add(r.isSuccess() ? r.getResult() : "");
-        }
+        final List<Object> items = args.items();
 
         // Map: run the sub-workflow per item in parallel, each in its own isolated child system.
         ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, maxParallel));
         List<Future<ItemRun>> futures = new ArrayList<>(items.size());
         for (int i = 0; i < items.size(); i++) {
             final int idx = i;
-            final String item = items.get(i);
+            final Object item = items.get(i);
             futures.add(pool.submit(() -> runOne(subYaml, baseDir, item, idx)));
         }
         List<ItemRun> outputs = new ArrayList<>(items.size());
@@ -116,35 +101,36 @@ public class ParallelMapActor extends IIActorRef<Object> {
             }
         } catch (Exception e) {
             pool.shutdownNow();
+            // A fatal error from an item's run is not one item's failure: the JVM is failing, so it
+            // goes on out of this action, and the calling workflow records it and ends.
+            ActionResult.rethrowIfFatal(e);
             return ActionResult.error(e, "parallel-map.run, a sub-workflow run");
         } finally {
             pool.shutdown();
         }
 
-        // Collect: append outputs to the parent's output list, in input order.
-        IIActorRef<?> outList = parentSystem.getIIActor(outListName);
-        if (outList == null) {
-            return new ActionResult(false, "parallel-map.run: output list not found: " + outListName);
-        }
-        for (ItemRun run : outputs) {
-            String o = run.output();
-            outList.callByActionName("add",
-                    new JSONObject().put("value", o == null ? "" : o).toString());
-        }
         String summary = "parallel-map: mapped " + items.size() + " item(s)";
         List<String> failures = new ArrayList<>();
+        JSONArray answers = new JSONArray();
         for (int i = 0; i < outputs.size(); i++) {
-            if (outputs.get(i).failed()) failures.add(i + " (" + items.get(i) + "): " + outputs.get(i).output());
+            ItemRun run = outputs.get(i);
+            if (run.failed()) {
+                failures.add(i + " (" + items.get(i) + "): " + run.output());
+            }
+            answers.put(run.output() == null ? JSONObject.NULL : run.output());
         }
         if (failures.isEmpty()) {
-            return new ActionResult(true, summary);
+            // The answers in item order, for the workflow to store with this.putJson.
+            return new ActionResult(true, answers.toString());
         }
-        // every output, a failed item's "error: ..." included, is in the output list; the run as a whole is false
         return new ActionResult(false, failures.size() + " of " + items.size() + " failed: " + String.join("; ", failures) + ". " + summary);
     }
 
-    /** Runs the sub-workflow for one item in an isolated child system; returns its {@code str:output}. */
-    private ItemRun runOne(String subYaml, String baseDir, String item, int idx) {
+    /**
+     * Runs the sub-workflow for one item in an isolated child system; returns the {@code output} it
+     * left in its state. A fatal error is rethrown rather than made one item's failure.
+     */
+    private ItemRun runOne(String subYaml, String baseDir, Object item, int idx) {
         IIActorSystem sub = new IIActorSystem("pm-" + getName() + "-" + idx, 2);
         try {
             Interpreter interp = new Interpreter.Builder().loggerName("pm-" + idx).team(sub).build();
@@ -156,17 +142,26 @@ public class ParallelMapActor extends IIActorRef<Object> {
             sub.addIIActor(new DynamicActorLoaderIIAR("loader", sub));
             sub.addIIActor(new VarsActor(sub, new HashMap<>()));
 
-            // Seed the per-task input, run the sub-workflow, read the per-task output.
-            sub.getIIActor("str:input").callByActionName("set", item);
+            // Put the item in the sub-workflow's own state, run it, read what it left at output.
+            ActionResult seeded = self.callByActionName("putJson",
+                    new JSONObject().put("path", INPUT_PATH).put("value", item).toString());
+            if (!seeded.isSuccess()) {
+                return ItemRun.failed(seeded.getResult());
+            }
             ActionResult r = interp.runWorkflow(subYaml, SUB_MAX_ITERATIONS);
             if (!r.isSuccess()) {
                 return ItemRun.failed("error: sub-workflow failed: " + r.getResult());
             }
-            IIActorRef<?> out = sub.getIIActor("str:output");
-            return ItemRun.done(out == null ? "" : out.callByActionName("get", "").getResult());
-        } catch (Exception e) {
-            LOG.log(Level.WARNING, "parallel-map task " + idx + " failed", e);
-            return ItemRun.failed("error: " + e.getMessage());
+            com.fasterxml.jackson.databind.JsonNode output = self.json().select(OUTPUT_PATH);
+            if (output.isMissingNode() || output.isNull()) {
+                return ItemRun.done(null);
+            }
+            return ItemRun.done(output.isTextual() ? output.asText()
+                    : new org.json.JSONTokener(output.toString()).nextValue());
+        } catch (Throwable t) {
+            ActionResult.rethrowIfFatal(t);
+            LOG.log(Level.WARNING, "parallel-map task " + idx + " failed", t);
+            return ItemRun.failed(ActionResult.errorText(t, "parallel-map item " + idx));
         } finally {
             // Shut down BOTH the actors (close hooks) AND the isolated system's thread pool. Without
             // terminate(), each task leaks a non-daemon executor: harmless when the host exits via
@@ -177,12 +172,18 @@ public class ParallelMapActor extends IIActorRef<Object> {
         }
     }
 
+    /** Where in the sub-workflow's own state the item is put. */
+    static final String INPUT_PATH = "input";
+
+    /** Where in the sub-workflow's own state its answer is read. */
+    static final String OUTPUT_PATH = "output";
+
     /**
-     * What one item's sub-workflow run left: its output for the output list, and whether it failed (then the output is
-     * the {@code error: ...} text).
+     * What one item's sub-workflow run left: its answer, and whether it failed (then the answer is the
+     * {@code error: ...} text).
      */
-    private record ItemRun(String output, boolean failed) {
-        static ItemRun done(String output) {
+    private record ItemRun(Object output, boolean failed) {
+        static ItemRun done(Object output) {
             return new ItemRun(output, false);
         }
 
