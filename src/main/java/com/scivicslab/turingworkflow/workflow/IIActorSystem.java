@@ -160,7 +160,18 @@ public class IIActorSystem extends ActorSystem {
         if (made == null) {
             return null;
         }
-        addIIActor(made);
+        try {
+            addIIActor(made);
+        } catch (IllegalStateException nameTaken) {
+            // Another lookup (or a createChild) registered this name between the check above and
+            // here. Keep the one registered, and close ours so its message loop does not leak.
+            ActorRef<?> winner = getActor(name);
+            if (winner == null || winner == made) {
+                throw nameTaken;
+            }
+            made.close();
+            return winner instanceof IIActorRef<?> facing ? (IIActorRef<T>) facing : null;
+        }
         if (!OUT_NAME.equals(name)) {
             LOGGER.warning("Actor '" + name + "' was made at a lookup because no transition created it."
                     + " Create it with loader.createChild (LookupThatCreates_260914_oo01).");
