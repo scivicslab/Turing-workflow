@@ -75,6 +75,18 @@ public class RunCLI {
      * @param repo the command repository
      */
     public static void registerCommand(CommandRepository repo) {
+        // "Workflow" category: groups run/list/describe together under "## Workflow",
+        // parallel to plugin-contributed categories such as "## Log".
+        repo.addCommand("Workflow", "run", options(), "Run a YAML/JSON workflow",
+                cl -> new RunCLI().execute(cl));
+    }
+
+    /**
+     * Builds the command-line options of the {@code run} command.
+     *
+     * @return the options
+     */
+    static Options options() {
         Options opts = new Options();
         opts.addOption(Option.builder("d")
                 .longOpt("directory")
@@ -113,18 +125,45 @@ public class RunCLI {
                 .desc("Log level: OFF, SEVERE, WARNING, INFO, FINE, FINER, FINEST (default: INFO)")
                 .build());
 
-        // "Workflow" category: groups run/list/describe together under "## Workflow",
-        // parallel to plugin-contributed categories such as "## Log".
-        repo.addCommand("Workflow", "run", opts, "Run a YAML/JSON workflow",
-                cl -> new RunCLI().execute(cl));
+        return opts;
     }
 
     /**
-     * Executes the run command.
+     * Executes the run command and exits the JVM with the run's exit status.
      *
      * @param cl the parsed command line
      */
     public void execute(CommandLine cl) {
+        System.exit(run(cl, new IIActorSystem("pojo-actor")));
+    }
+
+    /**
+     * Runs the workflow named on the command line in the given actor system.
+     *
+     * <p>The actor system is terminated however the run ends, including when it throws: the
+     * pools' non-daemon threads would otherwise keep the JVM (for example a k8s Job) alive.
+     * A throwable out of the run is reported and turns into exit status 1.</p>
+     *
+     * @param cl the parsed command line
+     * @param system the actor system the workflow runs in
+     * @return the exit status: 0 when the workflow reached "end", 1 otherwise
+     */
+    int run(CommandLine cl, IIActorSystem system) {
+        try {
+            return runIn(cl, system);
+        } catch (Throwable t) {
+            System.err.println("Workflow failed: " + t);
+            t.printStackTrace();
+            return 1;
+        } finally {
+            // terminateIIActors() closes the IIActor wrappers (e.g. their HTTP clients, which
+            // otherwise keep a non-daemon thread alive); terminate() shuts down the worker pools.
+            system.terminateIIActors();
+            system.terminate();
+        }
+    }
+
+    private int runIn(CommandLine cl, IIActorSystem system) {
         // Parse options
         File baseDirectory = new File(cl.getOptionValue("d", "."));
         String workflowFile = cl.getOptionValue("w");
@@ -190,11 +229,8 @@ public class RunCLI {
         Path workflowPath = baseDirectory.toPath().resolve(workflowFile);
         if (!workflowPath.toFile().exists()) {
             System.err.println("Workflow file not found: " + workflowPath);
-            System.exit(1);
+            return 1;
         }
-
-        // Create actor system
-        IIActorSystem system = new IIActorSystem("pojo-actor");
 
         // Create interpreter
         Interpreter interpreter = new Interpreter.Builder()
@@ -239,7 +275,7 @@ public class RunCLI {
             }
         } catch (java.io.IOException e) {
             System.err.println("Failed to load workflow: " + e.getMessage());
-            System.exit(1);
+            return 1;
         }
 
         // Apply params.default values for variables not already set by -P or -V
@@ -267,19 +303,13 @@ public class RunCLI {
         // Run workflow
         ActionResult result = interpreter.runUntilEnd(maxIterations);
 
-        // Terminate the actor system so non-daemon threads are released.
-        // terminateIIActors() closes the IIActor wrappers (e.g. their HTTP clients, which
-        // otherwise keep a non-daemon thread alive); terminate() shuts down the worker pools.
-        system.terminateIIActors();
-        system.terminate();
-
-        // Output result and exit with an appropriate code
+        // Output result and return the exit status
         if (result.isSuccess()) {
             System.out.println("Workflow completed successfully.");
-            System.exit(0);
+            return 0;
         } else {
             System.err.println("Workflow failed: " + result.getResult());
-            System.exit(1);
+            return 1;
         }
     }
 }
