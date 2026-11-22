@@ -218,6 +218,7 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
             Thread.currentThread().interrupt();
             return ActionResult.error(e, getName() + ".readYaml " + path);
         } catch (ExecutionException e) {
+            ActionResult.rethrowIfFatal(e);   // an Error is false; a fatal one goes on out of the run
             logger.log(Level.SEVERE, String.format("readYaml: %s", path), e);
             return ActionResult.error(e, getName() + ".readYaml " + path);
         }
@@ -315,6 +316,7 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
             Thread.currentThread().interrupt();
             return ActionResult.error(e, getName() + ".setCurrentState");
         } catch (ExecutionException e) {
+            ActionResult.rethrowIfFatal(e);   // an Error is false; a fatal one goes on out of the run
             logger.log(Level.SEVERE, String.format("setCurrentState: %s", state), e);
             return ActionResult.error(e, getName() + ".setCurrentState");
         }
@@ -330,6 +332,9 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
             logger.log(Level.SEVERE, String.format("actionName = %s, args = %s", actionName, args), e);
             return ActionResult.error(e, getName() + "." + actionName);
         } catch (ExecutionException e) {
+            // The interpreter's work failed. An Error is false like an exception; a fatal one, which
+            // the work has already recorded as the last result, goes on out of the run.
+            ActionResult.rethrowIfFatal(e);
             logger.log(Level.SEVERE, String.format("actionName = %s, args = %s", actionName, args), e);
             return ActionResult.error(e, getName() + "." + actionName);
         }

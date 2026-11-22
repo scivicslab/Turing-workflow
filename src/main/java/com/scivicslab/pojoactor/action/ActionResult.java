@@ -81,7 +81,7 @@ public class ActionResult {
     /**
      * The failed result for an action that ended with an exception.
      *
-     * <p>A failed action is false, and the workflow reads why in {@code ${result}}, so the reason
+     * <p>A failed action is false, and the workflow reads why in {@code jexl: result}, so the reason
      * must say what went wrong. Every place that turns an exception into a failed result builds it
      * here, in one fixed form:</p>
      *
@@ -124,6 +124,46 @@ public class ActionResult {
             text.append(" (in ").append(where).append(')');
         }
         return text.toString();
+    }
+
+    /**
+     * Returns the fatal error that {@code failure} is, or carries as a cause; {@code null} when there
+     * is none.
+     *
+     * <p>A failed action is false, whatever it threw, with one exception, the same one POJO-actor
+     * makes for a message: a {@link VirtualMachineError} other than {@link StackOverflowError}, such
+     * as {@link OutOfMemoryError} or {@link InternalError}, means the JVM itself is failing, so the
+     * run must not carry on. The engine records it as the action's failed result and then rethrows
+     * it. {@code StackOverflowError} is not fatal: by the time it is caught, the deep stack that
+     * caused it has unwound, so one action fails and the workflow goes on.</p>
+     *
+     * <p>The whole cause chain is searched, not only the wrappers {@link #error} unwraps: an
+     * expression engine or a future may wrap the fatal error in an exception of its own.</p>
+     *
+     * @param failure what an action, or the code running it, threw
+     * @return the fatal error in the chain, or {@code null}
+     */
+    public static VirtualMachineError fatalIn(Throwable failure) {
+        java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Throwable current = failure; current != null && seen.add(current); current = current.getCause()) {
+            if (current instanceof VirtualMachineError fatal && !(current instanceof StackOverflowError)) {
+                return fatal;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Rethrows the fatal error {@code failure} is or carries (see {@link #fatalIn}); returns
+     * normally when it carries none.
+     *
+     * @param failure what was thrown
+     */
+    public static void rethrowIfFatal(Throwable failure) {
+        VirtualMachineError fatal = fatalIn(failure);
+        if (fatal != null) {
+            throw fatal;
+        }
     }
 
     /** Unwraps the exceptions that only carry another one. */

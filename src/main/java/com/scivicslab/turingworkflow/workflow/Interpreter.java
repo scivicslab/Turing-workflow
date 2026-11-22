@@ -202,6 +202,12 @@ public class Interpreter {
                 recordLastResult(badArgument);
                 logger.exiting(CLASS_NAME, "action", badArgument);
                 return badArgument;
+            } catch (Throwable t) {
+                // Anything else converting the arguments threw: false, or recorded and rethrown
+                // when fatal (evaluateArgumentExpression lets a fatal error through).
+                ActionResult badArgument = failedWith(t, actorPath + "." + action + ", arguments");
+                logger.exiting(CLASS_NAME, "action", badArgument);
+                return badArgument;
             }
 
             // Resolve actor path using Unix-style notation or wildcard
@@ -246,8 +252,9 @@ public class Interpreter {
                     executionMode = ExecutionMode.POOL;  // Default to POOL
                 }
 
-                // A failed action is false, however it failed: an exception becomes a failed
-                // result whose text names it, and the workflow reads that in ${result}.
+                // A failed action is false, however it failed: an exception or an Error becomes a
+                // failed result whose text names it, and the workflow reads that in jexl: result.
+                // A fatal error is recorded the same way and then rethrown (failedWith).
                 String where = actorAR.getName() + "." + action;
                 try {
                     if (executionMode == ExecutionMode.POOL && system != null
@@ -272,12 +279,14 @@ public class Interpreter {
                     Thread.currentThread().interrupt();
                     logger.log(Level.WARNING, "Action interrupted: " + where, e);
                     result = ActionResult.error(e, where);
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "Action failed: " + where, e);
-                    result = ActionResult.error(e, where);
+                } catch (Throwable t) {
+                    // DIRECT and inline POOL: what the action threw, an Error included. POOL on the
+                    // pool: an ExecutionException carrying it.
+                    logger.log(Level.WARNING, "Action failed: " + where, t);
+                    result = failedWith(t, where);
                 }
 
-                // Save the result for variable expansion (${result})
+                // Keep the result for the next action to read as jexl: result
                 recordLastResult(result);
 
                 // If any action returns false, abort this step
@@ -293,13 +302,38 @@ public class Interpreter {
     }
 
     /**
-     * Keeps an action's result as {@code ${result}}, failed or not, so that the next candidate
-     * transition can read why the action was false.
+     * Keeps an action's result as the last result ({@code jexl: result}), failed or not, so that
+     * the next candidate transition can read why the action was false.
      */
     private void recordLastResult(ActionResult result) {
         if (selfActorRef != null) {
             selfActorRef.setLastResult(result);
         }
+    }
+
+    /**
+     * Returns the failed result for what an action threw, and records it as the last result.
+     *
+     * <p>Any {@code Throwable} makes the action false, an {@code Error} as much as an exception, so
+     * the workflow goes on and its YAML decides. The one exception follows POJO-actor: a fatal error
+     * ({@link ActionResult#fatalIn}, a {@code VirtualMachineError} other than
+     * {@code StackOverflowError}) is recorded as the last result and then rethrown out of the run,
+     * so a failing JVM does not carry on. The result names the fatal error itself when it came
+     * wrapped.</p>
+     *
+     * @param thrown what the action, or the wait for it, threw
+     * @param where  where it happened, usually {@code actor.method}
+     * @return the failed result, already recorded
+     */
+    private ActionResult failedWith(Throwable thrown, String where) {
+        VirtualMachineError fatal = ActionResult.fatalIn(thrown);
+        ActionResult failed = ActionResult.error(fatal != null ? fatal : thrown, where);
+        recordLastResult(failed);
+        if (fatal != null) {
+            logger.log(Level.SEVERE, "Fatal error in " + where + "; rethrowing it out of the run", fatal);
+            throw fatal;
+        }
+        return failed;
     }
 
     /** Marks an argument value as an expression rather than text to substitute into. */
@@ -323,9 +357,12 @@ public class Interpreter {
             return outcome == null ? JSONObject.NULL : outcome;
         } catch (ArgumentExpressionException e) {
             throw e;
-        } catch (Exception e) {
-            logger.warning("Argument expression failed: " + expression + " -- " + e.getMessage());
-            throw new ArgumentExpressionException(expression, e);
+        } catch (Throwable t) {
+            // An Error from a method the expression called fails the argument like an exception;
+            // a fatal one, which the expression engine may carry as a cause, is rethrown.
+            ActionResult.rethrowIfFatal(t);
+            logger.warning("Argument expression failed: " + expression + " -- " + t.getMessage());
+            throw new ArgumentExpressionException(expression, t);
         }
     }
 
@@ -338,7 +375,7 @@ public class Interpreter {
      * and report success.</p>
      */
     private static class ArgumentExpressionException extends RuntimeException {
-        ArgumentExpressionException(String expression, Exception cause) {
+        ArgumentExpressionException(String expression, Throwable cause) {
             super("argument expression failed: " + expression + " -- " + cause.getMessage(), cause);
         }
     }
@@ -822,9 +859,11 @@ public class Interpreter {
             // Run until end
             return runUntilEnd(maxIterations);
 
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Error running workflow: " + workflowFile, e);
-            return ActionResult.error(e, "runWorkflow " + workflowFile);
+        } catch (Throwable t) {
+            // An Error is false like an exception; a fatal one goes on out of the run.
+            ActionResult.rethrowIfFatal(t);
+            logger.log(Level.SEVERE, "Error running workflow: " + workflowFile, t);
+            return ActionResult.error(t, "runWorkflow " + workflowFile);
         }
     }
 
@@ -1475,9 +1514,12 @@ public class Interpreter {
 
             return result;
 
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Subworkflow error: " + workflowFile, e);
-            return ActionResult.error(e, "call " + workflowFile);
+        } catch (Throwable t) {
+            // An Error is false like an exception; a fatal one, which the sub-workflow has already
+            // recorded as its own last result, goes on out of the calling run.
+            ActionResult.rethrowIfFatal(t);
+            logger.log(Level.SEVERE, "Subworkflow error: " + workflowFile, t);
+            return ActionResult.error(t, "call " + workflowFile);
 
         } finally {
             // === Step 4: removeChild (always executed) ===
@@ -1600,9 +1642,12 @@ public class Interpreter {
                             logger.fine(String.format("Applied to %s: %s",
                                 actor.getName(), result.getResult()));
                         }
-                    } catch (Exception e) {
-                        failures.put(actor.getName(), ActionResult.errorText(e, actor.getName() + "." + methodName));
-                        logger.log(Level.WARNING, "Exception on " + actor.getName(), e);
+                    } catch (Throwable t) {
+                        // An Error is this child's failure like an exception. A fatal one is noted
+                        // too, and then rethrown: it fails this future, and the join below rethrows it.
+                        failures.put(actor.getName(), ActionResult.errorText(t, actor.getName() + "." + methodName));
+                        logger.log(Level.WARNING, "Exception on " + actor.getName(), t);
+                        ActionResult.rethrowIfFatal(t);
                     }
                 });
                 futures.add(future);
@@ -1626,9 +1671,11 @@ public class Interpreter {
                         String.join("; ", failureMessages)));
             }
 
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, "Apply error", e);
-            return ActionResult.error(e, "apply");
+        } catch (Throwable t) {
+            // A fatal error from a child arrives here inside a CompletionException: rethrow it.
+            ActionResult.rethrowIfFatal(t);
+            logger.log(Level.SEVERE, "Apply error", t);
+            return ActionResult.error(t, "apply");
         }
     }
 

@@ -212,6 +212,9 @@ public class ActionDispatcher {
         try {
             return (ActionResult) method.invoke(target, arg);
         } catch (InvocationTargetException e) {
+            // The @Action method threw. An Error is false like an exception; a fatal one is
+            // rethrown, so the engine records it and ends the run (ActionResult.fatalIn).
+            ActionResult.rethrowIfFatal(e);
             logger.log(Level.WARNING, "Error invoking @Action " + actionName, e);
             return ActionResult.error(e, actorName() + "." + actionName);
         } catch (IllegalAccessException e) {
