@@ -148,25 +148,33 @@ class OwnStepMatrixTest {
         PARENT_RUN_WORKFLOW,
         /** (b) the parent's step {@code actor: this, method: apply} over its child */
         PARENT_APPLY,
+        /** (b) the parent's step {@code actor: child, method: apply}: the child applies runUntilEnd to its own child, whose steps are the own steps */
+        CHILD_APPLY,
         /** (d) {@code ref.tell(i -> i.runUntilEnd())}: the loop is the actor's own message, on its mailbox virtual thread */
         OWN_MESSAGE
     }
 
-    /** The child's workflow, whose one step calls three actions on the actor itself, started the way {@code start} says. */
+    /**
+     * The workflow whose one step calls three actions on the actor itself, started the way {@code start} says.
+     * The actor that runs it is {@code child}, or {@code kid}, the child's child, for {@link Start#CHILD_APPLY}.
+     */
     private static void startedBy(Start start, String selfForm) throws Exception {
         Path dir = Files.createTempDirectory("own-step");
         IIActorSystem system = new IIActorSystem("own-step-start");
         try (ExecutorService virtual = Executors.newVirtualThreadPerTaskExecutor()) {
             Workflow parent = workflow(system, "parent", null);
-            Workflow child = workflow(system, "child", "parent");
+            Workflow middle = workflow(system, "child", "parent");
+            Workflow child = start == Start.CHILD_APPLY ? workflow(system, "kid", "child") : middle;
+            String form = start == Start.CHILD_APPLY ? selfForm.replace("child", "kid") : selfForm;
             Path file = dir.resolve("triple.yaml");
-            Files.writeString(file, tripleYaml(selfForm, file));
+            Files.writeString(file, tripleYaml(form, file));
             child.interpreter().readYaml(file);
             String parentStep = switch (start) {
                 case PARENT_RUN_UNTIL_END -> action("child", "runUntilEnd", "[20]");
                 case PARENT_EXEC_CODE -> action("child", "execCode", "[]");
                 case PARENT_RUN_WORKFLOW -> action("child", "runWorkflow", "[\"" + file + "\"]");
                 case PARENT_APPLY -> action("this", "apply", "{actor: child, method: runUntilEnd, arguments: [20]}");
+                case CHILD_APPLY -> action("child", "apply", "{actor: kid, method: runUntilEnd, arguments: [20]}");
                 case OWN_MESSAGE -> null;
             };
             ActionResult result;
