@@ -134,24 +134,34 @@ The expression is evaluated **before** the current action executes, so `result` 
 the result of the **previous** action — even across step boundaries, and also when that action
 was false.
 
-### `$(actor.method)` — Inline method call embedding
+### Reading an actor's value — `actors.get(...)`
 
-Embeds the return value of another actor's method directly into an argument string.
-The call happens at argument-evaluation time (before the current action runs).
+In a `jexl:` argument, `actors.get('name')` answers the object the actor wraps, and the
+expression calls that object's own methods. The call happens at argument-evaluation time
+(before the current action runs), and the value keeps its type. The interpreter does not expand
+`$(actor.method)`; write it as an expression instead.
+
+| Actor | `actors.get(...)` answers | Its value as text | Its value as a value |
+|---|---|---|---|
+| `calc`, `calc:i` | the accumulator | `actors.get('calc:i').toString()` → `3` | `actors.get('calc:i').get()` → `3.0` |
+| `str:name` | the text slot | `actors.get('str:name').get()` | (the same; it is text) |
+| `list:items` | the `List` of strings | — | `actors.get('list:items').get(0)` |
 
 ```yaml
-arguments: "$(calc.get)"               # inserts current value of calc
-arguments: "$(calc:i.get)"             # named instance
-arguments: "value is $(calc.get) now"  # mixed with literal text
-arguments: "$(list:items.get)"         # reads index 0 of list:items (default)
+arguments: "jexl: actors.get('calc').toString()"                    # current value of calc, as text
+arguments: "jexl: actors.get('calc:i').get()"                       # named instance, as a number
+arguments: "jexl: 'value is ' + actors.get('calc').toString() + ' now'"   # mixed with literal text
+arguments: "jexl: actors.get('list:items').get(0)"                  # index 0 of list:items
 ```
+
+A value an actor answers only through an action (for example `list:items.join`) is not a method
+of the wrapped object: call the action, then read its message with `jexl: result`.
 
 ### Expression mechanisms — four types
 
 | Where used | Syntax | Engine |
 |-----------|--------|--------|
 | Action `arguments` | `jexl:expr` — `state` (the interpreter's state, `-P` values included), `result`, `currentState`, `actors` | Apache Commons JEXL 3 |
-| Action `arguments` | `$(actor.method)` — inline method call | Java (evaluated before action runs) |
 | `states` patterns | `*`, `!state`, `a\|b\|c`, `>=5` | Java string matching |
 | `states` patterns | `jexl:expr` | Apache Commons JEXL 3 |
 | `calc.eval` argument | JEXL expression | Apache Commons JEXL 3 |
@@ -512,7 +522,8 @@ steps:
     actions:
       - actor: list:items
         method: get
-        arguments: "$(calc:i.get)"
+        arguments:
+          index: "jexl: actors.get('calc:i').get()"
 
   - states: ["loop", "end"]
     label: loop-done

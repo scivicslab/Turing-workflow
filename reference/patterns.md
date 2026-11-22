@@ -73,7 +73,7 @@ steps:
 
 ---
 
-### 5.3 Inline method call `$(actor.method)`
+### 5.3 Reading an actor's value with `actors.get(...)`
 
 ```yaml
 name: calc-demo
@@ -91,7 +91,7 @@ steps:
     actions:
       - actor: out
         method: print
-        arguments: "Counter is $(calc:i.get)"
+        arguments: "jexl: 'Counter is ' + actors.get('calc:i').toString()"
 
   - states: ["!end", "end"]
     label: catch-all
@@ -372,7 +372,7 @@ steps:
     actions:
       - actor: promptBuilder
         method: getWarning
-        arguments: "$(calc:i.get)"
+        arguments: "jexl: actors.get('calc:i').toString()"
 
   - states: ["loop", "end"]
     label: loop-done
@@ -611,7 +611,7 @@ steps:
     actions:
       - actor: out
         method: print
-        arguments: "Processing: $(str:input.get)"
+        arguments: "jexl: 'Processing: ' + actors.get('str:input').get()"
 
   - states: ["1", "end"]
     label: write-output
@@ -619,7 +619,7 @@ steps:
     actions:
       - actor: str:output
         method: set
-        arguments: "Processed: $(str:input.get)"
+        arguments: "jexl: 'Processed: ' + actors.get('str:input').get()"
 
   - states: ["!end", "end"]
     label: catch-all
@@ -673,7 +673,7 @@ steps:
     actions:
       - actor: out
         method: print
-        arguments: "Result: $(str:output.get)"
+        arguments: "jexl: 'Result: ' + actors.get('str:output').get()"
 
   - states: ["!end", "end"]
     label: catch-all
@@ -719,7 +719,8 @@ steps:
     actions:
       - actor: list:items
         method: get
-        arguments: "$(calc:i.get)"
+        arguments:
+          index: "jexl: actors.get('calc:i').get()"
 
   - states: ["loop", "end"]
     label: loop-done
@@ -766,7 +767,7 @@ steps:
         method: escapeJsonStored
       - actor: llm
         method: callAgent
-        arguments: '{"agent": "reviewer", "prompt": "$(str:body.get)"}'
+        arguments: "jexl: '{\"agent\": \"reviewer\", \"prompt\": \"' + actors.get('str:body').get() + '\"}'"
 ```
 
 ---
@@ -1007,7 +1008,7 @@ steps:
     actions:
       - actor: promptBuilder
         method: getWarning
-        arguments: "$(calc.get)"
+        arguments: "jexl: actors.get('calc').toString()"
 
   - states: ["loop", "5"]
     label: loop-done

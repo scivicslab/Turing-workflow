@@ -148,9 +148,12 @@ Wraps `ArrayList<String>`.
 - actor: list:items
   method: add
   arguments: "hello"
+- actor: list:items
+  method: join
+  arguments: {separator: ", "}
 - actor: out
   method: print
-  arguments: "$(list:items.join)"   # prints: hello
+  arguments: "jexl: result"         # prints: hello
 ```
 
 ### 3.8 `str` / `str:name` — String variable
@@ -187,7 +190,7 @@ Stores a single mutable string (initial value: `""`).
   method: escapeJsonStored
 - actor: llm
   method: callAgent
-  arguments: '{"agent": "reviewer", "prompt": "$(str:body.get)"}'
+  arguments: "jexl: '{\"agent\": \"reviewer\", \"prompt\": \"' + actors.get('str:body').get() + '\"}'"
 ```
 
 ### 3.9 `out` — Print output
@@ -203,7 +206,7 @@ Auto-created on first use.
 ```yaml
 - actor: out
   method: print
-  arguments: "Done. count=$(calc.get)"
+  arguments: "jexl: 'Done. count=' + actors.get('calc').toString()"
 - actor: out
   method: printf
   arguments: ["Result: %s (%.2f sec)", "jexl: result", "jexl: actors.get('calc:elapsed').get()"]

@@ -129,7 +129,7 @@ Sections with no entries are omitted. `build` fails if `addMessage` was not call
   actions:
     - actor: promptBuilder
       method: getWarning
-      arguments: "$(calc.get)"
+      arguments: "jexl: actors.get('calc').toString()"
 
 - states: ["verify-loop", "end"]
   label: verify-done
@@ -221,7 +221,7 @@ writing to a named `str:` actor before the call and reading from another after.
   actions:
     - actor: out
       method: print
-      arguments: "Result: $(str:output.get)"
+      arguments: "jexl: 'Result: ' + actors.get('str:output').get()"
 
 - states: ["!end", "end"]
   label: catch-all
