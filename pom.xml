@@ -167,6 +167,15 @@
                 <version>3.11.0</version>
                 <configuration>
                     <release>25</release>
+                    <compilerArgs>
+                        <!-- String concatenation as StringBuilder calls, not invokedynamic. A call site
+                             of invokedynamic that is first linked with too little stack left fails with
+                             BootstrapMethodError, and the JVM keeps that failure: the same concatenation
+                             throws it again at any depth, for the rest of the process. The concatenations
+                             on the engine's failure paths are first reached exactly there, at the bottom
+                             of a deep recursion; inline, they can only run out of stack where they run. -->
+                        <arg>-XDstringConcat=inline</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
 

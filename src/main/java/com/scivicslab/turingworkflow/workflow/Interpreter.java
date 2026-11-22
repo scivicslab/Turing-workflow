@@ -94,6 +94,13 @@ public class Interpreter {
     protected IIActorRef<?> selfActorRef = null;
 
     /**
+     * The action being run, {@code actor.method}, while {@link #action()} runs one; null between
+     * actions. Names the place of a failure that the attempt's single catch in {@link #execCode()}
+     * takes, so the reason keeps the form {@code (in actor.method)}.
+     */
+    private String runningWhere = null;
+
+    /**
      * Base directory for resolving relative workflow file paths.
      * When set, runWorkflow will look for files relative to this directory.
      */
@@ -190,6 +197,7 @@ public class Interpreter {
         for (Action a: transition.getActions()) {
             String actorPath = a.getActor();
             String action    = a.getMethod();
+            runningWhere = actorPath + "." + action;
 
             // Convert arguments to JSON format. An expression that cannot be evaluated fails the
             // action here, before the actor is asked to do anything with a null.
@@ -285,8 +293,8 @@ public class Interpreter {
                 } catch (Throwable t) {
                     // DIRECT and inline POOL: what the action threw, an Error included. POOL on the
                     // pool: an ExecutionException carrying it.
-                    logger.log(Level.WARNING, "Action failed: " + where, t);
                     result = failedWith(t, where);
+                    logQuietly(Level.WARNING, "Action failed: " + where, t);
                 }
 
                 // Keep the result for the next action to read as jexl: result
@@ -299,6 +307,7 @@ public class Interpreter {
                 }
             }
         }
+        runningWhere = null;
         ActionResult successResult = new ActionResult(true, "");
         logger.exiting(CLASS_NAME, "action", successResult);
         return successResult;
@@ -330,13 +339,51 @@ public class Interpreter {
      */
     private ActionResult failedWith(Throwable thrown, String where) {
         VirtualMachineError fatal = ActionResult.fatalIn(thrown);
-        ActionResult failed = ActionResult.error(fatal != null ? fatal : thrown, where);
+        ActionResult failed = new ActionResult(false, describeFailure(fatal != null ? fatal : thrown, where));
         recordLastResult(failed);
         if (fatal != null) {
-            logger.log(Level.SEVERE, "Fatal error in " + where + "; rethrowing it out of the run", fatal);
+            logQuietly(Level.SEVERE, "Fatal error in " + where + "; rethrowing it out of the run", fatal);
             throw fatal;
         }
         return failed;
+    }
+
+    /**
+     * The failure text {@code error: <class>: <message> (in <where>)}, or as much of it as can be
+     * built. Building it can throw too: the message of what was thrown can throw, and with the stack
+     * nearly used up any call can. Then the text names the class only, and as a last resort it is
+     * {@code error: unknown error}, so describing a failure never becomes a failure of its own. A
+     * fatal error while describing goes on out.
+     */
+    private static String describeFailure(Throwable thrown, String where) {
+        try {
+            return ActionResult.errorText(thrown, where);
+        } catch (Throwable notFull) {
+            ActionResult.rethrowIfFatal(notFull);
+            try {
+                return new StringBuilder("error: ").append(thrown.getClass().getName())
+                        .append(" (in ").append(where).append(')').toString();
+            } catch (Throwable notEven) {
+                ActionResult.rethrowIfFatal(notEven);
+                return UNDESCRIBED_FAILURE;
+            }
+        }
+    }
+
+    /** The failure text when not even the class of what was thrown can be named. */
+    private static final String UNDESCRIBED_FAILURE = "error: unknown error";
+
+    /**
+     * Logs, and swallows anything logging throws except a fatal error: a handler formats the
+     * throwable, which calls its message, and a log line must not turn a failure that was already
+     * recorded into one that escapes the run.
+     */
+    private void logQuietly(Level level, String message, Throwable thrown) {
+        try {
+            logger.log(level, message, thrown);
+        } catch (Throwable notLogged) {
+            ActionResult.rethrowIfFatal(notLogged);
+        }
     }
 
     /** Marks an argument value as an expression rather than text to substitute into. */
@@ -716,60 +763,74 @@ public class Interpreter {
 
             // Check if from-state matches current state
             if (matchesCurrentState(transition)) {
-                // Handle breakpoint: pause before executing
-                if (transition.isBreakpoint()) {
-                    paused = true;
-                    if (breakpointListener != null) {
-                        breakpointListener.onBreakpoint(transition, currentState);
-                    }
-                    synchronized (pauseLock) {
-                        while (paused && !stopRequested) {
-                            try {
-                                pauseLock.wait();
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                return ActionResult.error(e, "waiting at a breakpoint in state '" + currentState + "'");
+                // One catch for everything from this step being picked to its result being
+                // recorded: the wait at a breakpoint or a delay, the hook before it, the actions
+                // (arguments, dispatch, the result and its recording), the hook after it and the
+                // bookkeeping of a failure. A non-fatal Throwable anywhere in it makes this attempt
+                // false, as an action's own failure does, and the next step whose from-pattern
+                // matches is tried; a fatal one is recorded and rethrown (failedWith).
+                runningWhere = null;
+                try {
+                    // Handle breakpoint: pause before executing
+                    if (transition.isBreakpoint()) {
+                        paused = true;
+                        if (breakpointListener != null) {
+                            breakpointListener.onBreakpoint(transition, currentState);
+                        }
+                        synchronized (pauseLock) {
+                            while (paused && !stopRequested) {
+                                try {
+                                    pauseLock.wait();
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                    return ActionResult.error(e, "waiting at a breakpoint in state '" + currentState + "'");
+                                }
                             }
                         }
+                        if (stopRequested) {
+                            return new ActionResult(false, "Stopped at breakpoint");
+                        }
                     }
-                    if (stopRequested) {
-                        return new ActionResult(false, "Stopped at breakpoint");
+
+                    // Handle delay: wait before executing
+                    if (transition.getDelay() > 0) {
+                        try {
+                            Thread.sleep(transition.getDelay());
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return ActionResult.error(e, "the delay before a transition from '" + currentState + "'");
+                        }
                     }
-                }
 
-                // Handle delay: wait before executing
-                if (transition.getDelay() > 0) {
-                    try {
-                        Thread.sleep(transition.getDelay());
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return ActionResult.error(e, "the delay before a transition from '" + currentState + "'");
+                    // Hook: notify subclasses that we're entering this transition
+                    onEnterTransition(transition);
+
+                    // Try to execute actions
+                    ActionResult actionResult = action();
+                    // A failure from here on is the transition's, not the last action's.
+                    runningWhere = null;
+
+                    if (actionResult.isSuccess()) {
+                        // Hook: notify subclasses that transition succeeded
+                        onExitTransition(transition, true, actionResult);
+                        // All actions succeeded, transition to to-state
+                        transitionTo(getToState(transition));
+                        ActionResult stateResult = new ActionResult(true, "State: " + currentState);
+                        logger.exiting(CLASS_NAME, "execCode", stateResult);
+                        return stateResult;
                     }
-                }
-
-                // Hook: notify subclasses that we're entering this transition
-                onEnterTransition(transition);
-
-                // Try to execute actions
-                ActionResult actionResult = action();
-                if (!actionResult.isSuccess()) {
                     lastFailure = actionResult;
-                }
-
-                if (actionResult.isSuccess()) {
-                    // Hook: notify subclasses that transition succeeded
-                    onExitTransition(transition, true, actionResult);
-                    // All actions succeeded, transition to to-state
-                    transitionTo(getToState(transition));
-                    ActionResult stateResult = new ActionResult(true, "State: " + currentState);
-                    logger.exiting(CLASS_NAME, "execCode", stateResult);
-                    return stateResult;
-                }
-                // Hook: notify subclasses that transition failed
-                onExitTransition(transition, false, actionResult);
-                logger.finest("Action failed at state '" + currentState + "' transition " + transition.getStates() + ": " + actionResult.getResult());
-                if (actionFailureListener != null) {
-                    actionFailureListener.onActionFailure(transition, currentState, actionResult);
+                    // Hook: notify subclasses that transition failed
+                    onExitTransition(transition, false, actionResult);
+                    logger.finest("Action failed at state '" + currentState + "' transition " + transition.getStates() + ": " + actionResult.getResult());
+                    if (actionFailureListener != null) {
+                        actionFailureListener.onActionFailure(transition, currentState, actionResult);
+                    }
+                } catch (Throwable t) {
+                    String place = runningWhere != null ? runningWhere : "transition " + transition.getStates();
+                    runningWhere = null;
+                    lastFailure = failedWith(t, place);
+                    logQuietly(Level.WARNING, "Attempt failed: " + place, t);
                 }
                 // Action failed, try next step
             }
