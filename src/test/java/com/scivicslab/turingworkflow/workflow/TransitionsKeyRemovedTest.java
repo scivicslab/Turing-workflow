@@ -40,7 +40,7 @@ import com.scivicslab.turingworkflow.workflow.kustomize.WorkflowKustomizer;
 @DisplayName("the top-level transitions: key is removed")
 class TransitionsKeyRemovedTest {
 
-    static final String EXPECTED = "the top-level key `transitions:` was removed in 5.0.0; rename it to `steps:`";
+    static final String EXPECTED = "the top-level key 'transitions:' was removed in 5.0.0; rename it to 'steps:'";
 
     private static final String TRANSITIONS_ONLY = """
             name: old-style

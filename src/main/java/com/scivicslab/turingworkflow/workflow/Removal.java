@@ -39,7 +39,7 @@ public final class Removal {
      * Why a workflow whose top level has {@code transitions:} is refused when it is loaded. The key
      * was accepted in place of {@code steps:} until 4.x.
      */
-    public static final String TRANSITIONS_KEY = reason("the top-level key `transitions:`", "rename it to `steps:`");
+    public static final String TRANSITIONS_KEY = reason("the top-level key 'transitions:'", "rename it to 'steps:'");
 
     /**
      * Refuses a workflow, as it was read from YAML, whose top level still has the removed
