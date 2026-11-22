@@ -104,6 +104,49 @@ class ParallelMapActorFailureTest {
         }
     }
 
+    /** Has no transition for the items "beta" and "delta", so the sub-workflow fails for those two. */
+    private static final String ALL_BUT_BETA_AND_DELTA_YAML = """
+            name: all-but-beta-and-delta
+            steps:
+              - states: ["0", "end"]
+                label: echo-unless-beta-or-delta
+                actions:
+                  - actor: this
+                    method: onlyIf
+                    arguments: "jexl: state.getString('input') != 'beta' && state.getString('input') != 'delta'"
+                  - actor: this
+                    method: putJson
+                    arguments: {path: output, value: "jexl: 'processed: ' + state.getString('input')"}
+            """;
+
+    @Test
+    void run_twoOfFiveItemsFail_isFalseNamingEveryFailedItemInOrder(@TempDir Path dir) throws Exception {
+        Path yaml = dir.resolve("all-but-beta-and-delta.yaml");
+        Files.writeString(yaml, ALL_BUT_BETA_AND_DELTA_YAML);
+
+        IIActorSystem system = new IIActorSystem("pm-two-failures-test");
+        try {
+            ActionResult r = system.getIIActor("parallel-map").callByActionName("run", new JSONObject()
+                    .put("subWorkflow", yaml.toAbsolutePath().toString())
+                    .put("items", new JSONArray().put("alpha").put("beta").put("gamma").put("delta").put("epsilon"))
+                    .put("maxParallel", 5)
+                    .toString());
+
+            String text = r.getResult();
+            assertFalse(r.isSuccess(), text);
+            assertTrue(text.startsWith("2 of 5 failed: 1 (beta): error: sub-workflow failed: "), text);
+            int beta = text.indexOf("1 (beta): error: sub-workflow failed: ");
+            int delta = text.indexOf("; 3 (delta): error: sub-workflow failed: ");
+            assertTrue(delta > beta, "both failed items are named, in item order: " + text);
+            assertTrue(text.endsWith(". parallel-map: mapped 5 item(s)"), text);
+            for (String passed : new String[] {"(alpha)", "(gamma)", "(epsilon)"}) {
+                assertFalse(text.contains(passed), "only the failed items are named: " + text);
+            }
+        } finally {
+            system.terminateIIActors();
+        }
+    }
+
     @Test
     void run_fatalErrorFromAnItem_isRecordedAndRethrown(@TempDir Path dir) throws Exception {
         Path yaml = dir.resolve("bomb.yaml");
