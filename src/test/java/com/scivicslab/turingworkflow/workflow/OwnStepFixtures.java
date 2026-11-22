@@ -108,7 +108,7 @@ final class OwnStepFixtures {
             "{\"actor\":\"kid\",\"method\":\"doNothing\",\"arguments\":[\"x\"]}");
         add("readYaml", List.of(), "\"{W}\"", true, "[\"{W}\"]");
         add("setCurrentState", List.of(), "\"0\"", true, "[\"z\"]");
-        add("sleep", List.of(), "[1]", false, "[1]");
+        add("sleep", List.of(), "\"1\"", false, "[\"1\"]");
         add("print", List.of(), "[\"hello\"]", false, "[\"hello\"]");
         add("doNothing", List.of(), "[\"x\"]", false, "[\"x\"]");
         add("onlyIf", List.of(), "\"jexl: true\"", false, "[true]");
