@@ -71,7 +71,8 @@ public class ParallelMapActor extends IIActorRef<Object> {
      * @param items       the items, one sub-workflow run each; each is put in the sub-workflow's state at
      *                    {@code input}
      * @param maxParallel how many items run at once; six when absent
-     * @param baseDir     the directory the sub-workflow runs in; the current directory when absent
+     * @param baseDir     the directory the sub-workflow runs in, under the calling interpreter's base
+     *                    directory; the caller's base directory when absent
      */
     public record MapArgs(@NotNull String subWorkflow, @NotNull List<Object> items,
                           Integer maxParallel, String baseDir) {}
@@ -80,7 +81,21 @@ public class ParallelMapActor extends IIActorRef<Object> {
     public ActionResult run(MapArgs args) {
         final String subYaml = args.subWorkflow();
         final int maxParallel = args.maxParallel() != null ? args.maxParallel() : DEFAULT_PARALLEL;
-        final String baseDir = args.baseDir() != null ? args.baseDir() : ".";
+        // The sub-workflows read under the calling interpreter's base directory, as its own path loads
+        // do; an explicit baseDir must lie under it. A caller with none restricts nothing.
+        final String callerBase = Interpreter.baseDirOfDispatchingInterpreter();
+        final String baseDir;
+        if (args.baseDir() == null) {
+            baseDir = callerBase;
+        } else if (callerBase == null) {
+            baseDir = args.baseDir();
+        } else {
+            try {
+                baseDir = PathUnderBase.resolve(callerBase, args.baseDir()).toString();
+            } catch (java.io.IOException e) {
+                return ActionResult.error(e, "parallel-map.run, baseDir");
+            }
+        }
         final List<Object> items = args.items();
 
         // Map: run the sub-workflow per item in parallel, each in its own isolated child system.

@@ -141,9 +141,31 @@ public class DynamicActorLoaderActor implements CallableByActionName {
 
     private static final Logger logger = Logger.getLogger(DynamicActorLoaderActor.class.getName());
 
+    /** The user and password of a URL: {@code https://user:secret@host/}. */
+    private static final java.util.regex.Pattern URL_USER_INFO =
+            java.util.regex.Pattern.compile("([A-Za-z][A-Za-z0-9+.-]*://)[^/@\\s]+@");
+
+    /** A query or key=value parameter whose name says it holds a secret. */
+    private static final java.util.regex.Pattern SECRET_PARAMETER = java.util.regex.Pattern.compile(
+            "(?i)((?:^|[?&;,\\s])(?:password|passwd|pwd|token|access_token|secret|api_?key|key)=)[^&;,\\s'\"]*");
+
+    /**
+     * {@code text} with the credentials it may carry replaced by {@code ***}: the user and password
+     * of a URL, and the value of a parameter named like a secret. For log lines; the text the
+     * action works with is unchanged.
+     */
+    static String masked(String text) {
+        if (text == null) {
+            return null;
+        }
+        String noUser = URL_USER_INFO.matcher(text).replaceAll("$1***@");
+        return SECRET_PARAMETER.matcher(noUser).replaceAll("$1***");
+    }
+
     @Override
     public ActionResult callByActionName(String actionName, String args) {
-        logger.info("DynamicActorLoader: action='" + actionName + "' args='" + args + "'");
+        // FINE, and with credentials masked: an argument can be a URL or a query that carries them.
+        logger.fine("DynamicActorLoader: action='" + actionName + "' args='" + masked(args) + "'");
         try {
             switch (actionName) {
                 case "loadJar":
@@ -576,7 +598,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
 
         int added = IIActorRef.sharedSchemaRegistry().addFrom(sharedClassLoader);
         if (added > 0) {
-            logger.info("Read " + added + " action schema(s) from " + jarPath);
+            logger.info("Read " + added + " action schema(s) from " + masked(jarPath));
         }
     }
 

@@ -25,7 +25,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -67,11 +66,11 @@ public class Interpreter {
 
     protected Logger logger = Logger.getLogger(Interpreter.class.getName());
 
-    protected MatrixCode code = null;
+    protected volatile MatrixCode code = null;
 
-    protected int currentTransitionIndex = 0;
+    protected volatile int currentTransitionIndex = 0;
 
-    protected String currentState = "0";
+    protected volatile String currentState = "0";
 
     protected volatile boolean stopRequested = false;
 
@@ -79,9 +78,9 @@ public class Interpreter {
 
     private final Object pauseLock = new Object();
 
-    private BreakpointListener breakpointListener = null;
+    private volatile BreakpointListener breakpointListener = null;
 
-    private ActionFailureListener actionFailureListener = null;
+    private volatile ActionFailureListener actionFailureListener = null;
 
     protected IIActorSystem system = null;
 
@@ -101,16 +100,77 @@ public class Interpreter {
     private String runningWhere = null;
 
     /**
+     * The interpreter whose action is being dispatched on this thread, while one is. An actor that runs
+     * work for its caller ({@code parallel-map}) reads the caller's base directory from it; it is set
+     * on the thread that runs the action, inline or a ManagedThreadPool real thread.
+     */
+    private static final ThreadLocal<Interpreter> DISPATCHING = new ThreadLocal<>();
+
+    /**
+     * The base directory of the interpreter whose action is running on this thread, or null when none
+     * is, or it has no base directory set.
+     */
+    static String baseDirOfDispatchingInterpreter() {
+        Interpreter caller = DISPATCHING.get();
+        return caller == null ? null : caller.workflowBaseDir;
+    }
+
+    /** Calls {@code actionName} on {@code actor} with this interpreter recorded as the one dispatching it. */
+    private ActionResult dispatch(IIActorRef<?> actor, String actionName, String args) {
+        Interpreter previous = DISPATCHING.get();
+        DISPATCHING.set(this);
+        try {
+            return actor.callByActionName(actionName, args);
+        } finally {
+            if (previous == null) {
+                DISPATCHING.remove();
+            } else {
+                DISPATCHING.set(previous);
+            }
+        }
+    }
+
+    /**
+     * The sub-workflow nesting limit when {@value #MAX_CALL_DEPTH_PROPERTY} is not set. Workflows in
+     * use nest {@code this.call} and {@code runWorkflow} two levels deep at most; a recursive
+     * {@code this.call} ran out of a real (platform) thread's stack at about 366 levels, and the
+     * frames a level takes grow with the actors and hooks it runs, so the limit is far below that.
+     */
+    public static final int DEFAULT_MAX_CALL_DEPTH = 64;
+
+    /** The system property that sets the sub-workflow nesting limit. */
+    public static final String MAX_CALL_DEPTH_PROPERTY = "turingworkflow.maxCallDepth";
+
+    /** How deep this interpreter's run is nested: 0 for a top-level run, its caller's plus one for a sub-workflow. */
+    private int callDepth = 0;
+
+    /** How many runWorkflow runs are in progress on this interpreter, each nested in the one before. */
+    private int nestedRuns = 0;
+
+    /** The nesting limit now in force: the system property when it is set to a number of at least 1. */
+    static int maxCallDepth() {
+        Integer configured = Integer.getInteger(MAX_CALL_DEPTH_PROPERTY);
+        return configured != null && configured >= 1 ? configured : DEFAULT_MAX_CALL_DEPTH;
+    }
+
+    /** How deep a run started from here would be nested. */
+    private int depthOfNextRun() {
+        return callDepth + nestedRuns + 1;
+    }
+
+    /** The false result for a run that would nest deeper than the limit. */
+    private static ActionResult depthLimitReached(int depth, String what) {
+        int limit = maxCallDepth();
+        return new ActionResult(false, "sub-workflow depth limit reached: " + what + " would run at depth "
+                + depth + ", the limit is " + limit + " (system property " + MAX_CALL_DEPTH_PROPERTY + ")");
+    }
+
+    /**
      * Base directory for resolving relative workflow file paths.
      * When set, runWorkflow will look for files relative to this directory.
      */
     protected String workflowBaseDir = null;
 
-    /**
-     * Random number generator for child actor name generation.
-     * Shared across all interpreters for efficiency.
-     */
-    private static final Random random = new Random();
 
     /**
      * Builder for constructing Interpreter instances.
@@ -275,16 +335,16 @@ public class Interpreter {
                         // a sub-workflow, which this.call runs on the real thread of the calling
                         // action; handing the action to the pool and waiting would deadlock once
                         // every real thread of the pool waits the same way (with one, at once).
-                        result = actorAR.callByActionName(action, argumentString);
+                        result = dispatch(actorAR, action, argumentString);
                     } else if (executionMode == ExecutionMode.POOL && system != null) {
                         // POOL: Execute on managed thread pool (safe for heavy operations)
                         result = CompletableFuture.supplyAsync(
-                            () -> actorAR.callByActionName(action, argumentString),
+                            () -> dispatch(actorAR, action, argumentString),
                             system.getManagedThreadPool()
                         ).get();
                     } else {
                         // DIRECT: Direct synchronous call (for light operations)
-                        result = actorAR.callByActionName(action, argumentString);
+                        result = dispatch(actorAR, action, argumentString);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -411,8 +471,9 @@ public class Interpreter {
             // An Error from a method the expression called fails the argument like an exception;
             // a fatal one, which the expression engine may carry as a cause, is rethrown.
             ActionResult.rethrowIfFatal(t);
-            logger.warning("Argument expression failed: " + expression + " -- " + t.getMessage());
-            throw new ArgumentExpressionException(expression, t);
+            ArgumentExpressionException failed = new ArgumentExpressionException(expression, t);
+            logger.warning(failed.getMessage());
+            throw failed;
         }
     }
 
@@ -452,24 +513,64 @@ public class Interpreter {
      */
     private static class ArgumentExpressionException extends RuntimeException {
         ArgumentExpressionException(String expression, Throwable cause) {
-            super("argument expression failed: " + expression + " -- " + innermostMessage(cause), cause);
+            super("argument expression failed: " + expression + " -- " + describeWithoutContent(cause));
         }
 
         /**
-         * The message of the innermost cause that has one. The expression engine wraps what a
-         * method threw in an exception of its own, whose message only names the method
-         * ({@code JEXL error : get}); the reason the workflow needs is inside it.
+         * What went wrong, without the text it went wrong on: the class of the innermost cause and,
+         * where the cause carries one, the position. The messages of the causes are left out, except
+         * a message the engine itself wrote ({@link #thrownByTheEngine}). An
+         * expression that reads a file and parses it fails with a message that quotes what it read
+         * (Jackson's {@code Unrecognized token 'TOPSECRET'}), and the failure text reaches the
+         * workflow's {@code jexl: result} and the log. The expression itself is the workflow's own
+         * text and is kept. The cause is not attached for the same reason: a log handler would
+         * print its message.
          */
-        private static String innermostMessage(Throwable cause) {
-            String message = cause.getMessage();
+        static String describeWithoutContent(Throwable cause) {
             java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            Throwable innermost = cause;
+            String parsedAt = null;
+            String expressionAt = null;
             for (Throwable t = cause; t != null && seen.add(t); t = t.getCause()) {
-                if (t.getMessage() != null && !t.getMessage().isBlank()) {
-                    message = t.getMessage();
+                innermost = t;
+                if (t instanceof com.fasterxml.jackson.core.JsonProcessingException j && j.getLocation() != null) {
+                    parsedAt = "at line " + j.getLocation().getLineNr() + ", column " + j.getLocation().getColumnNr();
+                }
+                if (t instanceof java.util.regex.PatternSyntaxException p && p.getIndex() >= 0) {
+                    parsedAt = "at index " + p.getIndex();
+                }
+                if (expressionAt == null && t instanceof org.apache.commons.jexl3.JexlException je && je.getInfo() != null) {
+                    expressionAt = "expression line " + je.getInfo().getLine() + ", column " + je.getInfo().getColumn();
                 }
             }
-            return message;
+            // The innermost cause is what actually went wrong; the expression engine's own exceptions
+            // around it only wrap it. Its message is kept when the interpreter wrote it.
+            if (innermost != null && thrownByTheEngine(innermost)
+                    && innermost.getMessage() != null && !innermost.getMessage().isBlank()) {
+                return innermost.getMessage();
+            }
+            StringBuilder text = new StringBuilder(innermost == null ? "unknown error" : innermost.getClass().getName());
+            if (parsedAt != null) {
+                text.append(' ').append(parsedAt);
+            }
+            if (expressionAt != null) {
+                text.append(" (").append(expressionAt).append(')');
+            }
+            return text.toString();
         }
+
+        /**
+         * Whether {@code t} was thrown by the interpreter's own code, whose messages are reasons the
+         * engine wrote (a removed actor, a refused lookup) rather than text it read. Plugins and
+         * libraries are outside this package, so what they throw is described by class and position.
+         */
+        private static boolean thrownByTheEngine(Throwable t) {
+            StackTraceElement[] trace = t.getStackTrace();
+            return trace.length > 0 && trace[0].getClassName().startsWith(ENGINE_PACKAGE);
+        }
+
+        /** The package of the interpreter's own classes. */
+        private static final String ENGINE_PACKAGE = "com.scivicslab.turingworkflow.workflow.";
     }
 
     /**
@@ -932,32 +1033,20 @@ public class Interpreter {
      * @since 2.8.0
      */
     public ActionResult runWorkflow(String workflowFile, int maxIterations) {
+        int depth = depthOfNextRun();
+        if (depth > maxCallDepth()) {
+            return depthLimitReached(depth, "runWorkflow " + workflowFile);
+        }
+        nestedRuns++;
         try {
             // Reset state for fresh execution
             reset();
 
-            // Load workflow from classpath or file system
+            // Load workflow from classpath, or else from a file under the base directory: a path
+            // that climbs out of it, is absolute elsewhere or is a link to elsewhere is refused.
             InputStream stream = loadWorkflowFromClasspath(workflowFile);
-
-            // If not found in classpath, try workflowBaseDir
-            if (stream == null && workflowBaseDir != null) {
-                java.io.File baseDirFile = new java.io.File(workflowBaseDir, workflowFile);
-                if (baseDirFile.exists()) {
-                    try {
-                        stream = new java.io.FileInputStream(baseDirFile);
-                    } catch (java.io.FileNotFoundException e) {
-                        // Continue to try other options
-                    }
-                }
-            }
-
-            // If still not found, try as absolute or relative path
             if (stream == null) {
-                try {
-                    stream = new java.io.FileInputStream(workflowFile);
-                } catch (java.io.FileNotFoundException e) {
-                    return ActionResult.error(e, "runWorkflow " + workflowFile);
-                }
+                stream = java.nio.file.Files.newInputStream(PathUnderBase.resolve(workflowBaseDir, workflowFile));
             }
 
             readYaml(stream);
@@ -970,6 +1059,8 @@ public class Interpreter {
             ActionResult.rethrowIfFatal(t);
             logger.log(Level.SEVERE, "Error running workflow: " + workflowFile, t);
             return ActionResult.error(t, "runWorkflow " + workflowFile);
+        } finally {
+            nestedRuns--;
         }
     }
 
@@ -1379,7 +1470,10 @@ public class Interpreter {
         this.currentTransitionIndex = 0;
         this.currentState = "0";
         this.code = null;
-        this.stopRequested = false;
+        // Under the lock requestStop takes, so a stop and a reset are ordered one after the other.
+        synchronized (pauseLock) {
+            this.stopRequested = false;
+        }
     }
 
     /**
@@ -1528,10 +1622,14 @@ public class Interpreter {
      */
     protected String generateChildName(String workflowFile) {
         String baseName = workflowFile.replace(".yaml", "").replace(".json", "");
-        long timestamp = System.currentTimeMillis();
-        int rand = random.nextInt(100000);
-        return String.format("subwf-%s-%d-%05d", baseName, timestamp, rand);
+        return "subwf-" + baseName + "-" + CHILD_NUMBERS.incrementAndGet();
     }
+
+    /**
+     * The numbers sub-workflow children are named with, one counter for the whole JVM: two calls,
+     * even from two interpreters that share an actor system, never draw the same name.
+     */
+    private static final java.util.concurrent.atomic.AtomicLong CHILD_NUMBERS = new java.util.concurrent.atomic.AtomicLong();
 
     /**
      * Calls a subworkflow by creating a child interpreter, executing it, and removing it.
@@ -1565,7 +1663,15 @@ public class Interpreter {
             return new ActionResult(false, "No actor system configured");
         }
 
+        int childDepth = depthOfNextRun();
+        if (childDepth > maxCallDepth()) {
+            return depthLimitReached(childDepth, "call " + workflowFile);
+        }
+
         String childName = generateChildName(workflowFile);
+        // The child this call registered, if it got that far: only that one is removed at the end,
+        // so a call whose name was taken cannot close another call's child under the same name.
+        InterpreterIIAR registered = null;
 
         try {
             // === Step 1: createChild (親と同じクラスの子アクターを作成) ===
@@ -1578,6 +1684,7 @@ public class Interpreter {
             // InterpreterIIARでラップ（親と同じクラス）
             InterpreterIIAR childActor = new InterpreterIIAR(childName, childInterpreter, system);
             childInterpreter.setSelfActorRef(childActor);
+            childInterpreter.callDepth = childDepth;
 
             // 親子関係を設定
             if (selfActorRef != null) {
@@ -1585,6 +1692,7 @@ public class Interpreter {
                 selfActorRef.getNamesOfChildren().add(childName);
             }
             system.addIIActor(childActor);
+            registered = childActor;
 
             // === Step 2: loadWorkflow ===
             InputStream yamlStream = loadWorkflowFromClasspath(workflowFile);
@@ -1607,7 +1715,13 @@ public class Interpreter {
 
         } finally {
             // === Step 4: removeChild (always executed) ===
-            removeChildActor(childName);
+            if (registered != null && (Object) system.getIIActor(childName) == registered) {
+                removeChildActor(childName);
+            } else if (registered == null && selfActorRef != null && system.getIIActor(childName) == null) {
+                // Not registered, and nobody else holds the name: take back the name this call added
+                // to its parent's children.
+                selfActorRef.getNamesOfChildren().remove(childName);
+            }
         }
     }
 

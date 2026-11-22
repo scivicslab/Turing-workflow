@@ -250,7 +250,7 @@ class ActionErrorEscapeTest {
         String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
         for (int run = 1; run <= RECURSIVE_RUNS; run++) {
             Process p = new ProcessBuilder(java, "-cp", System.getProperty("java.class.path"),
-                    RecursiveCallMain.class.getName())
+                    RecursiveCallMain.class.getName(), "uncapped")
                     .redirectErrorStream(true)
                     .start();
             String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);

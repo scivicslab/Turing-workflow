@@ -260,12 +260,48 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
         try {
             JSONObject json = new JSONObject(args);
             String path = json.getString("path");
+            String tooLarge = indexAboveLimit(path);
+            if (tooLarge != null) {
+                return new ActionResult(false, "putJson: index " + tooLarge + " in path " + path
+                        + " is above the limit of " + MAX_PUT_JSON_INDEX);
+            }
             Object value = valueOf(json.get("value"));
             putJson(path, value);
             return new ActionResult(true, "Stored " + path + "=" + value);
         } catch (Exception e) {
             return ActionResult.error(e, getName() + ".putJson");
         }
+    }
+
+    /**
+     * The largest list index a {@code putJson} path may name ({@code items[100000]}). The JSON state
+     * fills a list up to the index it is given, one new element at a time, so one path with a large
+     * index allocates that many elements: {@code items[2000000000]} runs the process out of memory
+     * from inside the actor's work. A list a workflow fills element by element stays far below this;
+     * {@code appendJson} adds to the end without naming an index and is not limited.
+     */
+    public static final int MAX_PUT_JSON_INDEX = 100_000;
+
+    /**
+     * The first list index in {@code path} above {@link #MAX_PUT_JSON_INDEX}, as written, or null.
+     * Only a bracket holding digits alone is an index, as in the JSON state itself.
+     */
+    static String indexAboveLimit(String path) {
+        int open = path.indexOf('[');
+        while (open >= 0) {
+            int close = path.indexOf(']', open + 1);
+            if (close < 0) {
+                return null;
+            }
+            String inside = path.substring(open + 1, close).trim();
+            if (!inside.isEmpty() && inside.chars().allMatch(Character::isDigit)) {
+                if (inside.length() > 9 || Integer.parseInt(inside) > MAX_PUT_JSON_INDEX) {
+                    return inside;
+                }
+            }
+            open = path.indexOf('[', close + 1);
+        }
+        return null;
     }
 
     /**
