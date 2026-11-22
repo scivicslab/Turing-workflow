@@ -10,11 +10,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The JSON libraries on the classpath are at or above the versions that fix the advisories found in the
+ * The libraries on the classpath are at or above the versions that fix the advisories found in the
  * 5.0.0 security review: jackson-databind 2.21.7 (polymorphic-typing, ignore/view and deserialization
- * advisories) and org.json 20260719 (CVE-2026-59171, unbounded number in JSONTokener).
+ * advisories), org.json 20260719 (CVE-2026-59171, unbounded number in JSONTokener) and commons-jexl3
+ * 3.7.1 (sandbox fixes).
  */
-@DisplayName("JSON libraries are at the versions that fix the known advisories")
+@DisplayName("JSON and expression libraries are at the versions that fix the known advisories")
 class DependencyVersionsTest {
 
     @Test
@@ -27,6 +28,17 @@ class DependencyVersionsTest {
     void orgJson_isAtLeast_20260719() throws Exception {
         String v = version("org.json", "json");
         assertTrue(Long.parseLong(v) >= 20260719L, "org.json " + v);
+    }
+
+    /**
+     * commons-jexl3 3.7.1 closes the sandbox gaps the expression allow-list stands on: nested-class and
+     * interface-method denial (JEXL-468), the RESTRICTED isolation fixes (JEXL-457, JEXL-462), no
+     * instantiation of JEXL's internal classes (JEXL-450), and an interruptible {@code =~} (JEXL-471).
+     */
+    @Test
+    void commonsJexl_isAtLeast_3_7_1() throws Exception {
+        String v = version("org.apache.commons", "commons-jexl3");
+        assertTrue(compare(v, "3.7.1") >= 0, "commons-jexl3 " + v);
     }
 
     /** The version Maven recorded in the jar, read from META-INF/maven/<group>/<artifact>/pom.properties. */
