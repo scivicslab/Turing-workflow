@@ -17,8 +17,10 @@
 
 package com.scivicslab.turingworkflow.workflow.scheduler;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -35,7 +37,9 @@ import com.scivicslab.turingworkflow.workflow.IIActorSystem;
  *
  * <p>This class provides scheduling capabilities for workflow actors using
  * action names and string arguments. Tasks are executed on actors via
- * {@link IIActorRef#callByActionName(String, String)}.</p>
+ * {@link IIActorRef#callByActionName(String, String)}, handed to the actor's mailbox with
+ * {@code ask()}, so a scheduled action runs one message at a time with the actor's other
+ * messages. A tick never waits for the action it handed over.</p>
  *
  * <p><strong>Usage Example:</strong></p>
  * <pre>{@code
@@ -76,6 +80,7 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
     private static final class ScheduledTask {
         final String taskId;
         volatile ScheduledFuture<?> tick;
+        volatile CompletableFuture<?> running;
         volatile boolean cancelled;
 
         ScheduledTask(String taskId) {
@@ -158,7 +163,12 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
                 stopTick(task);
                 return;
             }
-            executeOnActor(taskId, targetActorName, actionName, actionArgs);
+            if (task.running != null && !task.running.isDone()) {
+                logger.log(Level.WARNING, "Skipping a tick of scheduled task " + taskId
+                        + ": its previous execution has not finished");
+                return;
+            }
+            task.running = executeOnActor(taskId, targetActorName, actionName, actionArgs);
         }, initialDelay, period, unit));
 
         logger.log(Level.INFO, String.format(
@@ -206,13 +216,16 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
                                           long initialDelay, long delay, TimeUnit unit) {
         ScheduledTask task = new ScheduledTask(taskId);
         registerTask(taskId, task);
-        arm(task, executor.scheduleWithFixedDelay(() -> {
+        Runnable[] run = new Runnable[1];
+        run[0] = () -> {
             if (task.cancelled) {
-                stopTick(task);
                 return;
             }
-            executeOnActor(taskId, targetActorName, actionName, actionArgs);
-        }, initialDelay, delay, unit));
+            task.running = executeOnActor(taskId, targetActorName, actionName, actionArgs);
+            // Count the delay from the end of this execution without holding a tick thread until then.
+            task.running.whenComplete((ignored, failure) -> scheduleNext(task, run[0], delay, unit));
+        };
+        scheduleNext(task, run[0], initialDelay, unit);
 
         logger.log(Level.INFO, String.format(
             "Scheduled with fixed delay: %s -> %s.%s (initial=%d, delay=%d %s)",
@@ -290,12 +303,10 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
      * @return true if the task exists and is not cancelled, false otherwise
      */
     public boolean isScheduled(String taskId) {
+        // A fixed-delay task's tick is done between executions, so ask the task whether it has
+        // been cancelled instead of asking its current tick; a once-task leaves the map when run.
         ScheduledTask task = scheduledTasks.get(taskId);
-        if (task == null || task.cancelled) {
-            return false;
-        }
-        ScheduledFuture<?> tick = task.tick;
-        return tick == null || (!tick.isCancelled() && !tick.isDone());
+        return task != null && !task.cancelled;
     }
 
     /**
@@ -370,27 +381,55 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
 
     // ========== Private Helper Methods ==========
 
-    private void executeOnActor(String taskId, String targetActorName,
-                                 String actionName, String actionArgs) {
+    /**
+     * Hands the action to the target actor's mailbox with {@code ask()} and returns at once. The
+     * action runs on the actor's own virtual message-loop thread, one message at a time with the
+     * actor's other messages, as every message to an actor does; the tick thread never runs it
+     * and never waits for it. A failure is logged when the returned future completes.
+     */
+    private CompletableFuture<?> executeOnActor(String taskId, String targetActorName,
+                                                String actionName, String actionArgs) {
+        CompletableFuture<ActionResult> execution;
         try {
             IIActorRef<?> actor = actorSystem.getIIActor(targetActorName);
             if (actor == null) {
                 logger.log(Level.WARNING, String.format(
                     "Actor not found for scheduled task %s: %s",
                     taskId, targetActorName));
-                return;
+                return CompletableFuture.completedFuture(null);
             }
-
-            ActionResult result = actor.callByActionName(actionName, actionArgs);
-            if (!result.isSuccess()) {
+            execution = askAction(actor, actionName, actionArgs);
+        } catch (RuntimeException e) {
+            execution = CompletableFuture.failedFuture(e);
+        }
+        return execution.whenComplete((result, failure) -> {
+            if (failure != null) {
+                logger.log(Level.SEVERE, String.format(
+                    "Error executing scheduled task %s: %s",
+                    taskId, failure.getMessage()), failure);
+            } else if (!result.isSuccess()) {
                 logger.log(Level.WARNING, String.format(
                     "Scheduled task %s failed: %s",
                     taskId, result.getResult()));
             }
-        } catch (Exception e) {
-            logger.log(Level.SEVERE, String.format(
-                "Error executing scheduled task %s: %s",
-                taskId, e.getMessage()), e);
+        });
+    }
+
+    /** Runs the action by name in the actor's mailbox. */
+    private static <T> CompletableFuture<ActionResult> askAction(IIActorRef<T> actor,
+                                                                String actionName, String actionArgs) {
+        return actor.ask((T ignored) -> actor.callByActionName(actionName, actionArgs));
+    }
+
+    /** Schedules the next fixed-delay execution of {@code task}, unless it has been cancelled. */
+    private void scheduleNext(ScheduledTask task, Runnable run, long delay, TimeUnit unit) {
+        if (task.cancelled) {
+            return;
+        }
+        try {
+            arm(task, executor.schedule(run, delay, unit));
+        } catch (RejectedExecutionException e) {
+            // the scheduler is shutting down
         }
     }
 
