@@ -110,8 +110,8 @@ class WorkflowSchedulerClosedActorTest {
         Thread.sleep(100);
         assertTrue(target.wrapped().get() > 0, "the tasks ran before the actor was closed");
 
+        records.clear(); // before close(): a tick during close() already logs its task as stopped
         target.close();
-        records.clear();
         Thread.sleep(1000);
 
         assertEquals(2, stopped(), "one WARNING per stopped task: " + messages());
