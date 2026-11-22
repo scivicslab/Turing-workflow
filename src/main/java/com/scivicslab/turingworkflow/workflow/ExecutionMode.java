@@ -63,12 +63,25 @@ public enum ExecutionMode {
      *
      * <p><strong>Warning:</strong> Heavy operations will block the workflow thread.</p>
      */
-    DIRECT;
+    DIRECT,
+
+    /**
+     * Execute the action on the calling interpreter's mailbox virtual thread, and wait for it on
+     * the step's thread.
+     *
+     * <p>The mode of an action that orchestrates
+     * ({@link com.scivicslab.pojoactor.action.Action#orchestrates()}) when its step gives no
+     * {@code execution:} key; a step can also write {@code execution: mailbox}. The action waits
+     * on that virtual thread while the work it hands out runs on the pool's real threads. When the
+     * step's thread is already that mailbox virtual thread, or is one of the pool's real threads,
+     * or the interpreter has no actor of its own, the action runs on the step's thread instead.</p>
+     */
+    MAILBOX;
 
     /**
      * Parses execution mode from string (case-insensitive).
      *
-     * @param value the string value ("pool", "direct")
+     * @param value the string value ("pool", "direct", "mailbox")
      * @return the corresponding ExecutionMode, or POOL if null/empty
      */
     public static ExecutionMode fromString(String value) {
@@ -79,6 +92,7 @@ public enum ExecutionMode {
         String normalized = value.trim().toLowerCase();
         return switch (normalized) {
             case "direct" -> DIRECT;
+            case "mailbox" -> MAILBOX;
             case "pool" -> POOL;
             default -> POOL;  // Unknown values default to POOL (safe)
         };

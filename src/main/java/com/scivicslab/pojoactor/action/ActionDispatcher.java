@@ -304,4 +304,16 @@ public class ActionDispatcher {
         discover();
         return actionMethods.containsKey(actionName);
     }
+
+    /**
+     * Whether the {@link Action @Action} of that name declares {@link Action#orchestrates()}.
+     *
+     * @param actionName the action name
+     * @return true when such an action exists and orchestrates; false otherwise
+     */
+    public boolean orchestrates(String actionName) {
+        discover();
+        Method method = actionMethods.get(actionName);
+        return method != null && method.getAnnotation(Action.class).orchestrates();
+    }
 }

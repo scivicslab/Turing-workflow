@@ -251,10 +251,11 @@ public class Interpreter {
             for (IIActorRef<?> actorAR : actors) {
                 ActionResult result;
 
-                // Execute based on ExecutionMode
-                ExecutionMode executionMode = a.getExecution();
+                // Execute based on ExecutionMode. A step that gives none takes the action's own:
+                // MAILBOX for an action that orchestrates (@Action(orchestrates = true)), else POOL.
+                ExecutionMode executionMode = a.getDeclaredExecution();
                 if (executionMode == null) {
-                    executionMode = ExecutionMode.POOL;  // Default to POOL
+                    executionMode = actorAR.orchestrates(action) ? ExecutionMode.MAILBOX : ExecutionMode.POOL;
                 }
 
                 // A failed action is false, however it failed: an exception or an Error becomes a
@@ -262,7 +263,11 @@ public class Interpreter {
                 // A fatal error is recorded the same way and then rethrown (failedWith).
                 String where = actorAR.getName() + "." + action;
                 try {
-                    if (executionMode == ExecutionMode.POOL && system != null
+                    if (executionMode == ExecutionMode.MAILBOX && canWaitForOwnMailbox()) {
+                        // MAILBOX: the action runs on this interpreter's mailbox virtual thread, and
+                        // this thread, which is not one of the pool's real threads, waits for it.
+                        result = selfActorRef.ask(unused -> actorAR.callByActionName(action, argumentString)).get();
+                    } else if (executionMode == ExecutionMode.POOL && system != null
                             && system.getManagedThreadPool() instanceof ManagedThreadPool pool
                             && pool.ownsCurrentThread()) {
                         // POOL, already on one of the pool's real threads: run here. This happens in
@@ -277,7 +282,8 @@ public class Interpreter {
                             system.getManagedThreadPool()
                         ).get();
                     } else {
-                        // DIRECT: Direct synchronous call (for light operations)
+                        // DIRECT: Direct synchronous call (for light operations). Also MAILBOX when
+                        // the mailbox cannot be waited for from here (canWaitForOwnMailbox).
                         result = actorAR.callByActionName(action, argumentString);
                     }
                 } catch (InterruptedException e) {
@@ -304,6 +310,23 @@ public class Interpreter {
         ActionResult successResult = new ActionResult(true, "");
         logger.exiting(CLASS_NAME, "action", successResult);
         return successResult;
+    }
+
+    /**
+     * Whether this thread can wait for an action run on this interpreter's mailbox virtual thread.
+     *
+     * <p>Not when there is no mailbox (no actor of its own), not on that mailbox virtual thread
+     * itself (the message would queue behind the one that waits for it), and not on one of the
+     * ManagedThreadPool's real threads: the action hands work to the pool, and a pool real thread
+     * waiting for that work can hang the pool (with one real thread, at once). Then the action runs
+     * on this thread instead.</p>
+     */
+    private boolean canWaitForOwnMailbox() {
+        if (selfActorRef == null || selfActorRef.ownsCurrentThread()) {
+            return false;
+        }
+        return !(system != null && system.getManagedThreadPool() instanceof ManagedThreadPool pool
+                && pool.ownsCurrentThread());
     }
 
     /**
@@ -1634,9 +1657,9 @@ public class Interpreter {
      *
      * <p>Each child's work runs on the ManagedThreadPool's real threads, never on commonPool.
      * Called on a thread that is not one of the pool's real threads, such as the interpreter's
-     * mailbox virtual thread, the children run in parallel and the calling thread waits. Called on
-     * one of the pool's real threads, which is where a workflow step's {@code this.apply} runs,
-     * the children run on that real thread one after another.</p>
+     * mailbox virtual thread where a workflow step's {@code this.apply} runs (it orchestrates), the
+     * children run in parallel and the calling thread waits. Called on one of the pool's real
+     * threads, the children run on that real thread one after another.</p>
      *
      * @param actionDefinition JSON string containing actor, method, and arguments
      * @return ActionResult indicating success or failure
@@ -1680,9 +1703,11 @@ public class Interpreter {
             // ask(action, pool); nothing here runs on commonPool. Called on a thread that is not
             // one of the pool's real threads (the interpreter's mailbox virtual thread, say), the
             // children run in parallel on the pool's real threads and this thread waits for them.
-            // Called on one of the pool's real threads, as a workflow step reaches it through
-            // InterpreterIIAR, ask runs each child right here, one after another (ActorRef's inline
-            // rule): no parallelism, but no pool real thread waits for work queued behind itself.
+            // A workflow step reaches it on the interpreter's mailbox virtual thread (apply
+            // orchestrates). Called on one of the pool's real threads instead (an explicit
+            // execution: pool, or a step of a workflow whose loop runs on the pool), ask runs each
+            // child right here, one after another (ActorRef's inline rule): no parallelism, but no
+            // pool real thread waits for work queued behind itself.
             ExecutorService pool = system.getManagedThreadPool();
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             final String finalArgs = args;

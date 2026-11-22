@@ -187,11 +187,17 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *     arguments: [0.05, 0.02, 0.5]
      * }</pre>
      *
+     * <p>apply orchestrates ({@link Action#orchestrates()}): a step that gives no
+     * {@code execution:} key runs it on this interpreter's mailbox virtual thread, which waits while
+     * the children run in parallel on the ManagedThreadPool's real threads. It runs on the thread it
+     * is called on and is not handed to the pool; called on one of the pool's real threads, it runs
+     * the children there, one after another.</p>
+     *
      * @param args {@code {"actor": "<pattern>", "method": "<action>", "arguments": <any>}}
      */
-    @Action("apply")
+    @Action(value = "apply", orchestrates = true)
     public ActionResult apply(String args) {
-        return asked("apply", args, i -> i.apply(args));
+        return this.object.apply(args);
     }
 
     /**

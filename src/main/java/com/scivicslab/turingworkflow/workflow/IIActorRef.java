@@ -183,6 +183,18 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
         return dispatcher.has(actionName);
     }
 
+    /**
+     * Whether the action of that name orchestrates ({@link Action#orchestrates()}): a workflow step
+     * that names it without an {@code execution:} key runs it on the calling interpreter's mailbox
+     * virtual thread rather than on the ManagedThreadPool.
+     *
+     * @param actionName the action name
+     * @return true for an {@code @Action(orchestrates = true)} method of that name
+     */
+    public boolean orchestrates(String actionName) {
+        return dispatcher.orchestrates(actionName);
+    }
+
 
     /**
      * Invokes an action by name on this actor.
