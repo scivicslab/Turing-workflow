@@ -1239,7 +1239,11 @@ public class Interpreter {
      * @since 2.14.0
      */
     public void requestStop() {
-        this.stopRequested = true;
+        // A run paused at a breakpoint waits on pauseLock; wake it so it sees the stop.
+        synchronized (pauseLock) {
+            this.stopRequested = true;
+            pauseLock.notifyAll();
+        }
     }
 
     /**
