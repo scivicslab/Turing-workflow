@@ -1589,7 +1589,10 @@ public class Interpreter {
                 futures.add(future);
             }
 
-            // Wait for all async tasks to complete
+            // Wait for all async tasks to complete. No time limit on purpose: each actor's
+            // action may legitimately run a long time, and every future here now always
+            // completes. Following TimeoutAndScheduler_251012_oo01, a caller that needs a limit
+            // puts it on its own wait.
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
             if (failures.isEmpty()) {

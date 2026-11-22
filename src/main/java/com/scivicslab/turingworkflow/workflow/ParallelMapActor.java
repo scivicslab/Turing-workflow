@@ -106,6 +106,9 @@ public class ParallelMapActor extends IIActorRef<Object> {
         List<String> outputs = new ArrayList<>(items.size());
         try {
             for (Future<String> f : futures) {
+                // No time limit on purpose: a sub-workflow run may legitimately take a long time,
+                // and each run's future always completes. Following TimeoutAndScheduler_251012_oo01,
+                // a caller that needs a limit puts it on its own wait.
                 outputs.add(f.get());
             }
         } catch (Exception e) {

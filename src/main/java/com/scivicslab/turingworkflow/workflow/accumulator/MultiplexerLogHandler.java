@@ -25,6 +25,7 @@ import java.util.logging.LogRecord;
 
 import org.json.JSONObject;
 
+import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.turingworkflow.workflow.IIActorRef;
 import com.scivicslab.turingworkflow.workflow.IIActorSystem;
 
@@ -109,7 +110,11 @@ public class MultiplexerLogHandler extends Handler {
             arg.put("source", getSourceName(record));
             arg.put("type", "log-" + level);
             arg.put("data", formattedLog);
-            multiplexer.callByActionName("add", arg.toString());
+            ActionResult result = multiplexer.callByActionName("add", arg.toString());
+            if (!result.isSuccess()) {
+                // The multiplexer did not take the record: keep it on System.err, never JUL.
+                System.err.println("MultiplexerLogHandler: " + result.getResult() + ": " + formattedLog);
+            }
         } catch (Exception e) {
             // Avoid infinite recursion - don't log errors from the log handler
             System.err.println("MultiplexerLogHandler error: " + e.getMessage());
