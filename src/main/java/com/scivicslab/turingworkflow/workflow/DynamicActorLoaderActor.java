@@ -80,6 +80,22 @@ import java.util.logging.Logger;
  * <p>The one-step {@code loadFromJar} was removed in 5.0.0; calling it is false with
  * a reason saying so. {@code loadJar} followed by {@code createChild} replaces it.</p>
  *
+ * <h2>Who may load code: the operator, through a step</h2>
+ *
+ * <p>{@code loadJar} reads any jar the JVM can read, and {@code createChild} initialises and
+ * constructs any class it can then find. That is running code, with the rights of the process. It
+ * is power for the operator who decides which workflows a process runs, not something a workflow's
+ * text should reach on its own.</p>
+ *
+ * <p>So the loader is reached in one way only: a step that names it, {@code actor: loader} with
+ * {@code method: loadJar} or {@code createChild}. A host that registers a {@code loader} trusts every
+ * workflow it runs to do this; a host that runs workflows it does not trust registers none. An
+ * expression ({@code jexl:} in an argument or in {@code states}) cannot reach the loader, nor
+ * build one: {@code actors.get("loader")} answers the actor's last result and state, not this
+ * object, and an expression can neither call {@code new} nor call a method of this class
+ * ({@code WorkflowExpressions}, {@code ExpressionReach_261122_oo01}). Only the explicit step
+ * remains.</p>
+ *
  * @author devteam@scivicslab.com
  * @since 2.6.0
  */
