@@ -109,16 +109,18 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
     /**
      * Constructs a new WorkflowScheduler with the specified actor system and pool size.
      *
+     * <p>The tick threads are virtual threads. A tick only hands the action to the actor's
+     * mailbox and never waits for it, so it needs no real thread; the only real-thread pool is
+     * the actor system's {@code ManagedThreadPool}
+     * ({@code RealThreadsOutsideManagedThreadPool_261122_oo01}).</p>
+     *
      * @param actorSystem the actor system containing target actors
-     * @param poolSize the number of threads in the scheduler's thread pool
+     * @param poolSize the number of virtual threads that fire the ticks
      */
     public WorkflowScheduler(IIActorSystem actorSystem, int poolSize) {
         this.actorSystem = actorSystem;
-        this.executor = Executors.newScheduledThreadPool(poolSize, (Runnable r) -> {
-            Thread t = new Thread(r, "WorkflowScheduler-Worker");
-            t.setDaemon(true);
-            return t;
-        });
+        this.executor = Executors.newScheduledThreadPool(poolSize,
+                Thread.ofVirtual().name("WorkflowScheduler-Worker-", 0).factory());
         this.scheduledTasks = new ConcurrentHashMap<>();
     }
 
