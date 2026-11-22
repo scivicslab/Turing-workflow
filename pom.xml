@@ -146,6 +146,21 @@
         <finalName>${project.artifactId}-${project.version}</finalName>
         <plugins>
 
+            <!-- The name this jar has on the module path. Without it the JVM derives one from the file
+                 name, which changes with the version and is not the package root. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Automatic-Module-Name>com.scivicslab.turingworkflow</Automatic-Module-Name>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -219,11 +234,10 @@
                         </goals>
                     </execution>
                     <execution>
-                        <!-- This jar's action manifest (OutActor, CalcActor, InterpreterIIAR, the JSON State
-                             actions of IIActorRef, ...), read by ActionManifest. The resource name is the
-                             jar's own and a services-file index names it, so an uber-jar that holds several
-                             such jars keeps all of them. The doclet is this project's own class, so it is
-                             taken from target/classes rather than from a repository artifact. -->
+                        <!-- This jar's action manifests (OutActor, CalcActor, InterpreterIIAR, the JSON State
+                             actions of IIActorRef, ...), one file per class under META-INF/turing-actions/,
+                             read by ActionManifest. The doclet is this project's own class, so it is taken
+                             from target/classes rather than from a repository artifact. -->
                         <id>generate-plugin-manifest</id>
                         <goals><goal>javadoc</goal></goals>
                         <phase>prepare-package</phase>
@@ -236,8 +250,6 @@
                             <additionalOptions>
                                 <additionalOption>-turingClassesDir</additionalOption>
                                 <additionalOption>${project.build.outputDirectory}</additionalOption>
-                                <additionalOption>-turingManifestResource</additionalOption>
-                                <additionalOption>META-INF/turing-plugin/${project.groupId}.${project.artifactId}.json</additionalOption>
                             </additionalOptions>
                             <doclint>none</doclint>
                         </configuration>

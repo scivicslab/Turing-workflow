@@ -24,7 +24,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * The doclet run by the javadoc tool on one source file: what of the Javadoc of an {@code @Action}
- * method reaches {@code turing-plugin.json}, and in what form.
+ * method reaches its class's manifest file, and in what form.
  */
 @Tag("ActionCatalogWithJavadoc_260930_oo01")
 @DisplayName("TuringPluginDoclet — the Javadoc of an action, as JSON")
@@ -66,7 +66,7 @@ class TuringPluginDocletTest {
         Path src = dir.resolve("sample/Greeter.java");
         Files.createDirectories(src.getParent());
         Files.writeString(src, SOURCE);
-        Path out = dir.resolve("META-INF");
+        Path classes = dir.resolve("classes");
 
         DocumentationTool javadoc = ToolProvider.getSystemDocumentationTool();
         StringWriter log = new StringWriter();
@@ -74,12 +74,13 @@ class TuringPluginDocletTest {
             Iterable<? extends JavaFileObject> units = files.getJavaFileObjects(src);
             List<String> options = List.of(
                     "-classpath", System.getProperty("java.class.path"),
-                    "-turingOutputDir", out.toString());
+                    "-turingClassesDir", classes.toString());
             Boolean ok = javadoc.getTask(log, files, null, TuringPluginDoclet.class, options, units).call();
             assertTrue(ok, log.toString());
         }
 
-        JsonNode root = new ObjectMapper().readTree(out.resolve("turing-plugin.json").toFile());
+        JsonNode root = new ObjectMapper().readTree(
+                classes.resolve("META-INF/turing-actions/sample.Greeter.json").toFile());
         JsonNode actor = root.get("actors").get(0);
         assertEquals("sample.Greeter", actor.get("class").asText());
         JsonNode greet = actor.get("actions").get(0);
@@ -101,14 +102,23 @@ class TuringPluginDocletTest {
     }
 
     /**
-     * With a resource name of its own the manifest survives an uber-jar merge, and the services-file
-     * index tells {@code ActionManifest} where it is.
+     * One file per class, named after the class's binary name, which is what {@code Class.getName()}
+     * answers and so what {@code ActionManifest} looks up; nothing under {@code META-INF/services/},
+     * which may name only provider classes.
      */
     @Test
-    void ownResourceNameAndTheIndexLine(@TempDir Path dir) throws Exception {
+    void oneFilePerClass_namedByBinaryName_nothingUnderServices(@TempDir Path dir) throws Exception {
         Path src = dir.resolve("sample/Greeter.java");
         Files.createDirectories(src.getParent());
-        Files.writeString(src, SOURCE);
+        Files.writeString(src, SOURCE.replace("    /** Waves without a word. */", """
+                    /** An actor nested in another. */
+                    public static class Inner {
+                        /** Says hi from inside. */
+                        @Action("hi")
+                        public ActionResult hi(String args) { return new ActionResult(true, "hi"); }
+                    }
+
+                    /** Waves without a word. */"""));
         Path classes = dir.resolve("classes");
 
         DocumentationTool javadoc = ToolProvider.getSystemDocumentationTool();
@@ -116,16 +126,21 @@ class TuringPluginDocletTest {
         try (StandardJavaFileManager files = javadoc.getStandardFileManager(null, null, null)) {
             List<String> options = List.of(
                     "-classpath", System.getProperty("java.class.path"),
-                    "-turingClassesDir", classes.toString(),
-                    "-turingManifestResource", "META-INF/turing-plugin/sample.greeter.json");
+                    "-turingClassesDir", classes.toString());
             Boolean ok = javadoc.getTask(log, files, null, TuringPluginDoclet.class, options,
                     files.getJavaFileObjects(src)).call();
             assertTrue(ok, log.toString());
         }
 
-        assertTrue(Files.exists(classes.resolve("META-INF/turing-plugin/sample.greeter.json")));
-        assertFalse(Files.exists(classes.resolve("META-INF/turing-plugin.json")), "the shared name is not written");
-        assertEquals("META-INF/turing-plugin/sample.greeter.json\n",
-                Files.readString(classes.resolve(TuringPluginDoclet.INDEX_RESOURCE)));
+        Path dirOf = classes.resolve("META-INF/turing-actions");
+        try (var listed = Files.list(dirOf)) {
+            assertEquals(List.of("sample.Greeter$Inner.json", "sample.Greeter.json"),
+                    listed.map(p -> p.getFileName().toString()).sorted().toList());
+        }
+        JsonNode inner = new ObjectMapper().readTree(dirOf.resolve("sample.Greeter$Inner.json").toFile());
+        assertEquals("sample.Greeter$Inner", inner.get("actors").get(0).get("class").asText());
+        assertEquals("Says hi from inside.", inner.get("actors").get(0).get("actions").get(0).get("description").asText());
+        assertFalse(Files.exists(classes.resolve("META-INF/services")), "nothing is written under META-INF/services");
+        assertFalse(Files.exists(classes.resolve("META-INF/turing-plugin.json")), "no shared file");
     }
 }

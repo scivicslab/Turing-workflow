@@ -37,6 +37,8 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import com.scivicslab.pojoactor.action.schema.ActionManifest;
+
 import javax.tools.Diagnostic;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -51,25 +53,22 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Javadoc doclet that generates META-INF/turing-plugin.json from @Action annotated methods.
+ * Javadoc doclet that writes, for every class with {@code @Action} methods, the prose of those actions
+ * to {@code META-INF/turing-actions/<binary class name>.json} under the classes directory.
  *
  * <p>Extracts, for each @Action method, the action name, the first sentence of its Javadoc as
  * {@code description}, the rest of the Javadoc body as {@code details}, the first {@code <pre>}
  * block of the body as {@code example} (the usage example the author wrote, usually a YAML step),
  * and the @param tags as {@code params} — the argument record's when the method takes a record,
- * the method's own otherwise. The JSON goes into the JAR's META-INF directory, where the Workflow
- * Editor reads it from JAR entries without loading the plugin into the JVM and
- * {@code ActionCatalog} merges it with the JSON Schemas.</p>
+ * the method's own otherwise. {@code ActionManifest} reads the file of a class when it is asked about
+ * that class, and {@code ActionCatalog} merges it with the JSON Schemas.</p>
  *
- * <h2>One file per jar, and an index an uber-jar keeps</h2>
+ * <h2>One file per class</h2>
  *
- * <p>An uber-jar keeps one entry per name, so when every jar writes {@code META-INF/turing-plugin.json}
- * only one survives the merge and the other jars' actions lose their prose. Give the file a name of
- * its own with {@code -turingManifestResource META-INF/turing-plugin/<groupId>.<artifactId>.json}
- * (and {@code -turingClassesDir} for where the classes go); the doclet then also writes the index
- * line {@code META-INF/services/com.scivicslab.pojoactor.action.schema.ActionManifestSource}, a
- * services file, which uber-jar builders concatenate rather than drop. {@code ActionManifest} reads
- * every resource the index names, and {@code META-INF/turing-plugin.json} as before.</p>
+ * <p>The file is named after the class, so no two jars write the same entry: an uber-jar keeps
+ * every one without merging any, and nothing needs an index to find them. Nothing is written under
+ * {@code META-INF/services/}, whose files may name only provider classes; a jar with anything else
+ * there cannot be resolved as an automatic module.</p>
  *
  * <p>Configure in maven-javadoc-plugin:</p>
  * <pre>{@code
@@ -81,15 +80,13 @@ import java.util.stream.Collectors;
  *     <doclet>com.scivicslab.pojoactor.doclet.TuringPluginDoclet</doclet>
  *     <docletArtifact>
  *       <groupId>com.scivicslab</groupId>
- *       <artifactId>pojo-actor</artifactId>
- *       <version>3.0.1</version>
+ *       <artifactId>turing-workflow</artifactId>
+ *       <version>5.0.0</version>
  *     </docletArtifact>
  *     <useStandardDocletOptions>false</useStandardDocletOptions>
  *     <additionalOptions>
  *       <additionalOption>-turingClassesDir</additionalOption>
  *       <additionalOption>${project.build.outputDirectory}</additionalOption>
- *       <additionalOption>-turingManifestResource</additionalOption>
- *       <additionalOption>META-INF/turing-plugin/${project.groupId}.${project.artifactId}.json</additionalOption>
  *     </additionalOptions>
  *   </configuration>
  * </execution>
@@ -97,12 +94,7 @@ import java.util.stream.Collectors;
  */
 public class TuringPluginDoclet implements Doclet {
 
-    /** The resource the index names and {@code ActionManifest} reads first. */
-    public static final String INDEX_RESOURCE = "META-INF/services/com.scivicslab.pojoactor.action.schema.ActionManifestSource";
-
-    private String outputDir = "target/classes/META-INF";
     private String classesDir = null;
-    private String manifestResource = null;
     private Reporter reporter;
 
     @Override
@@ -129,23 +121,12 @@ public class TuringPluginDoclet implements Doclet {
             @Override public List<String> getNames() { return List.of("-d"); }
             @Override public String getParameters() { return "<directory>"; }
             @Override public boolean process(String opt, List<String> arguments) {
-                return true; // ignored — use -turingOutputDir instead
-            }
-        };
-        Option turingOption = new Option() {
-            @Override public int getArgumentCount() { return 1; }
-            @Override public String getDescription() { return "Absolute output directory for turing-plugin.json"; }
-            @Override public Kind getKind() { return Kind.OTHER; }
-            @Override public List<String> getNames() { return List.of("-turingOutputDir"); }
-            @Override public String getParameters() { return "<directory>"; }
-            @Override public boolean process(String opt, List<String> arguments) {
-                outputDir = arguments.get(0);
-                return true;
+                return true; // ignored — the manifests go under -turingClassesDir
             }
         };
         Option classesOption = new Option() {
             @Override public int getArgumentCount() { return 1; }
-            @Override public String getDescription() { return "The classes directory the manifest resource and its index are written under"; }
+            @Override public String getDescription() { return "The classes directory the per-class manifests are written under"; }
             @Override public Kind getKind() { return Kind.OTHER; }
             @Override public List<String> getNames() { return List.of("-turingClassesDir"); }
             @Override public String getParameters() { return "<directory>"; }
@@ -154,18 +135,7 @@ public class TuringPluginDoclet implements Doclet {
                 return true;
             }
         };
-        Option resourceOption = new Option() {
-            @Override public int getArgumentCount() { return 1; }
-            @Override public String getDescription() { return "Resource path of this jar's manifest, unique to the jar, e.g. META-INF/turing-plugin/<groupId>.<artifactId>.json"; }
-            @Override public Kind getKind() { return Kind.OTHER; }
-            @Override public List<String> getNames() { return List.of("-turingManifestResource"); }
-            @Override public String getParameters() { return "<resource>"; }
-            @Override public boolean process(String opt, List<String> arguments) {
-                manifestResource = arguments.get(0);
-                return true;
-            }
-        };
-        return Set.of(dOption, turingOption, classesOption, resourceOption);
+        return Set.of(dOption, classesOption);
     }
 
     @Override
@@ -222,7 +192,9 @@ public class TuringPluginDoclet implements Doclet {
 
             if (!actions.isEmpty()) {
                 Map<String, Object> actor = new LinkedHashMap<>();
-                actor.put("class", typeEl.getQualifiedName().toString());
+                // The binary name (Outer$Inner), which is what Class.getName() answers and so
+                // what ActionManifest looks the file up by.
+                actor.put("class", env.getElementUtils().getBinaryName(typeEl).toString());
                 actor.put("actions", actions);
                 actors.add(actor);
             }
@@ -411,29 +383,21 @@ public class TuringPluginDoclet implements Doclet {
     }
 
     private boolean writeJson(List<Map<String, Object>> actors) {
+        if (classesDir == null) {
+            reporter.print(Diagnostic.Kind.ERROR, "TuringPluginDoclet: -turingClassesDir is required");
+            return false;
+        }
+        Path classes = Paths.get(classesDir);
         try {
-            if (manifestResource != null) {
-                if (classesDir == null) {
-                    reporter.print(Diagnostic.Kind.ERROR, "TuringPluginDoclet: -turingManifestResource needs -turingClassesDir");
-                    return false;
-                }
-                Path classes = Paths.get(classesDir);
-                Path output = classes.resolve(manifestResource);
+            for (Map<String, Object> actor : actors) {
+                // RESOURCE_DIR is a compile-time constant, inlined here: calling ActionManifest
+                // itself would load it, and its Jackson dependency is not on the doclet's path.
+                Path output = classes.resolve(ActionManifest.RESOURCE_DIR + actor.get("class") + ".json");
                 Files.createDirectories(output.getParent());
-                Files.writeString(output, buildJson(actors));
-                // The index is a services file because that is the one kind of entry an uber-jar
-                // builder concatenates instead of keeping only one of.
-                Path index = classes.resolve(INDEX_RESOURCE);
-                Files.createDirectories(index.getParent());
-                Files.writeString(index, manifestResource + "\n");
-                reporter.print(Diagnostic.Kind.NOTE, "TuringPluginDoclet: wrote " + output + " and its index line in " + index);
-                return true;
+                Files.writeString(output, buildJson(List.of(actor)));
             }
-            Path dir = Paths.get(outputDir);
-            Files.createDirectories(dir);
-            Path output = dir.resolve("turing-plugin.json");
-            Files.writeString(output, buildJson(actors));
-            reporter.print(Diagnostic.Kind.NOTE, "TuringPluginDoclet: wrote " + output);
+            reporter.print(Diagnostic.Kind.NOTE, "TuringPluginDoclet: wrote " + actors.size()
+                    + " manifests under " + classes.resolve(ActionManifest.RESOURCE_DIR));
             return true;
         } catch (IOException e) {
             reporter.print(Diagnostic.Kind.ERROR, "TuringPluginDoclet: failed to write manifest: " + e.getMessage());
@@ -441,7 +405,6 @@ public class TuringPluginDoclet implements Doclet {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private String buildJson(List<Map<String, Object>> actors) {
         StringBuilder sb = new StringBuilder("{\n  \"actors\": [\n");
         for (int i = 0; i < actors.size(); i++) {

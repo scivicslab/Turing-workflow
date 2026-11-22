@@ -1,6 +1,7 @@
 package com.scivicslab.pojoactor.action.schema;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -109,9 +110,7 @@ class ActionCatalogTest {
         try {
             ActionSchemaRegistry registry = new ActionSchemaRegistry(
                     ActionCatalogTest.class.getClassLoader(), "test-action-schemas");
-            ActionManifest manifest = new ActionManifest(
-                    ActionCatalogTest.class.getClassLoader(), "test-turing-plugin.json");
-            assertEquals(2, manifest.size());
+            ActionManifest manifest = new ActionManifest();
             ActionCatalog catalog = new ActionCatalog(system, registry, manifest);
             ActionResult r = catalog.callByActionName("describeAction",
                     "{\"actor\":\"greeter\",\"action\":\"greetTyped\"}");
@@ -147,19 +146,23 @@ class ActionCatalogTest {
      */
     @Test
     void findsTheProseOfAnInheritedAction() {
-        ActionManifest manifest = new ActionManifest(ActionCatalogTest.class.getClassLoader(), "test-turing-plugin.json");
+        ActionManifest manifest = new ActionManifest();
         assertEquals("Greets whoever the text names.", manifest.docFor(PoliteGreeter.class, "greet").description());
         var json = ActionCatalog.describe(PoliteGreeter.class, "greet", new ActionSchemaRegistry(), manifest);
         assertEquals("args", json.get("argument").get("name").asText());
         assertTrue(ActionCatalog.actionNamesOf(PoliteGreeter.class).contains("greetTyped"));
     }
 
-    /** The default manifest reads the resources the services-file index names, from every jar. */
+    /** A class's manifest is the resource named after it, read through the class's own loader. */
     @Test
-    void readsTheManifestsTheIndexNames() {
+    void readsTheManifestNamedAfterTheClass() {
         ActionManifest manifest = new ActionManifest();
-        assertEquals("Greets whoever the text names.", manifest.docFor(Greeter.class, "greet").description(),
-                "src/test/resources' index names test-turing-plugin.json, so the default manifest holds it");
+        assertEquals("META-INF/turing-actions/" + Greeter.class.getName() + ".json",
+                ActionManifest.resourceOf(Greeter.class.getName()));
+        assertEquals("Greets whoever the text names.", manifest.docFor(Greeter.class, "greet").description());
+        assertEquals("Greets the named person.",
+                manifest.docFor(Greeter.class.getName(), "greetTyped").description(), "looked up by name as well");
+        assertNull(manifest.docFor(Greeter.class, "noSuchAction"));
     }
 
     @Test
@@ -168,7 +171,7 @@ class ActionCatalogTest {
         assertEquals(java.util.List.of("greet", "greetTyped"), new java.util.ArrayList<>(names));
         var json = ActionCatalog.describe(Greeter.class, "greetTyped",
                 new ActionSchemaRegistry(ActionCatalogTest.class.getClassLoader(), "test-action-schemas"),
-                new ActionManifest(ActionCatalogTest.class.getClassLoader(), "test-turing-plugin.json"));
+                new ActionManifest());
         assertEquals(Greeter.class.getName(), json.get("class").asText());
         assertTrue(json.get("schema").get("properties").has("name"));
     }

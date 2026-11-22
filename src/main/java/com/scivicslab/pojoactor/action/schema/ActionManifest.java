@@ -4,40 +4,39 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.InputStream;
-import java.net.URL;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * The prose about actions that {@code TuringPluginDoclet} wrote at build time into each jar's
- * {@code META-INF/turing-plugin.json}: for every {@code @Action} method, the first sentence of its
- * Javadoc, the rest of the body, the first {@code <pre>} block as the usage example, and the
- * {@code @param} descriptions — of its argument record, or of the method's own String parameter.
- * Read from every jar on the classpath, keyed by fully-qualified class name and action name, the same
- * key the JSON Schemas use, so {@link ActionCatalog} can answer both in one description
- * ({@code ActionCatalogWithJavadoc_260930_oo01}).
+ * The prose about actions that {@code TuringPluginDoclet} wrote at build time, one file per class, at
+ * {@value #RESOURCE_DIR}{@code <binary class name>.json}: for every {@code @Action} method, the first
+ * sentence of its Javadoc, the rest of the body, the first {@code <pre>} block as the usage example, and
+ * the {@code @param} descriptions — of its argument record, or of the method's own String parameter.
+ * Keyed by fully-qualified class name and action name, the same key the JSON Schemas use, so
+ * {@link ActionCatalog} can answer both in one description ({@code ActionCatalogWithJavadoc_260930_oo01}).
  *
- * <p>Two places are read. The index {@value #INDEX_RESOURCE} — a services file, which an uber-jar
- * builder concatenates from every jar instead of keeping one — names each jar's own manifest
- * resource, and every one named is read. {@value #DEFAULT_RESOURCE} is read as well, for jars whose
- * doclet run wrote the one shared name; in an uber-jar only one of those survives.</p>
+ * <p>A class's file is read the first time the class is asked about, through the class's own class
+ * loader, so a jar loaded while the process runs is read like one on the startup classpath. Nothing is
+ * listed or indexed: whoever asks already knows the class, from a registered actor. The file name is the
+ * class's, so in an uber-jar no two jars' files collide.</p>
  */
 public class ActionManifest {
 
     private static final Logger logger = Logger.getLogger(ActionManifest.class.getName());
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** The resource every jar carries when its build ran the doclet with the shared name. */
-    public static final String DEFAULT_RESOURCE = "META-INF/turing-plugin.json";
+    /** The resource directory the per-class manifests are in. */
+    public static final String RESOURCE_DIR = "META-INF/turing-actions/";
 
-    /** The services file whose lines name each jar's own manifest resource. */
-    public static final String INDEX_RESOURCE =
-            "META-INF/services/com.scivicslab.pojoactor.action.schema.ActionManifestSource";
+    /** The resource holding the manifest of the class named {@code binaryClassName}. */
+    public static String resourceOf(String binaryClassName) {
+        return RESOURCE_DIR + binaryClassName + ".json";
+    }
 
     /**
      * What the manifest says about one action.
@@ -53,72 +52,32 @@ public class ActionManifest {
                             Map<String, String> params, String argsFormat) {}
 
     private final Map<String, ActionDoc> docs = new ConcurrentHashMap<>();
+    /** Class names whose manifest was looked for, found or not, so each is read at most once. */
+    private final Set<String> looked = ConcurrentHashMap.newKeySet();
+    private final ClassLoader classLoader;
 
-    /** Reads every {@value #DEFAULT_RESOURCE} visible to this class's classloader. */
+    /** Looks up a class named by a string through this class's class loader. */
     public ActionManifest() {
-        this(ActionManifest.class.getClassLoader(), DEFAULT_RESOURCE);
-    }
-
-    /** Reads every {@value #DEFAULT_RESOURCE} visible to {@code classLoader}. */
-    public ActionManifest(ClassLoader classLoader) {
-        this(classLoader, DEFAULT_RESOURCE);
+        this(ActionManifest.class.getClassLoader());
     }
 
     /**
-     * @param classLoader  where to look
-     * @param resourceName the resource name to read, for tests that keep a manifest apart; when it is
-     *                     {@value #DEFAULT_RESOURCE} the index is read as well
+     * @param classLoader where {@link #docFor(String, String)} looks up a class named by a string;
+     *                    {@link #docFor(Class, String)} uses the class's own loader
      */
-    public ActionManifest(ClassLoader classLoader, String resourceName) {
-        if (DEFAULT_RESOURCE.equals(resourceName)) {
-            addIndexed(classLoader);
-        }
-        addFrom(classLoader, resourceName);
+    public ActionManifest(ClassLoader classLoader) {
+        this.classLoader = classLoader;
     }
 
-    /** Reads every manifest the index names; returns how many actions were added. */
-    public int addIndexed(ClassLoader classLoader) {
-        int before = docs.size();
-        java.util.Set<String> named = new java.util.LinkedHashSet<>();
-        try {
-            Enumeration<URL> urls = classLoader.getResources(INDEX_RESOURCE);
-            while (urls.hasMoreElements()) {
-                URL url = urls.nextElement();
-                try (InputStream in = url.openStream()) {
-                    for (String line : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
-                        String name = line.strip();
-                        if (!name.isEmpty() && !name.startsWith("#")) named.add(name);
-                    }
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "Could not read action manifest index " + url, e);
-                }
-            }
+    /** Reads the manifest of {@code className} through {@code loader}, once. */
+    private void ensureRead(String className, ClassLoader loader) {
+        if (loader == null || !looked.add(className)) return;
+        String resource = resourceOf(className);
+        try (InputStream in = loader.getResourceAsStream(resource)) {
+            if (in != null) load(JSON.readTree(in));
         } catch (Exception e) {
-            logger.log(Level.WARNING, "Could not list action manifest indexes", e);
+            logger.log(Level.WARNING, "Could not read action manifest " + resource, e);
         }
-        for (String name : named) {
-            addFrom(classLoader, name);
-        }
-        return docs.size() - before;
-    }
-
-    /** Reads every {@code resourceName} visible to {@code classLoader}; returns how many actions were added. */
-    public int addFrom(ClassLoader classLoader, String resourceName) {
-        int before = docs.size();
-        try {
-            Enumeration<URL> urls = classLoader.getResources(resourceName);
-            while (urls.hasMoreElements()) {
-                URL url = urls.nextElement();
-                try (InputStream in = url.openStream()) {
-                    load(JSON.readTree(in));
-                } catch (Exception e) {
-                    logger.log(Level.WARNING, "Could not read action manifest " + url, e);
-                }
-            }
-        } catch (Exception e) {
-            logger.log(Level.WARNING, "Could not list action manifests " + resourceName, e);
-        }
-        return docs.size() - before;
     }
 
     private void load(JsonNode root) {
@@ -151,23 +110,27 @@ public class ActionManifest {
      */
     public ActionDoc docFor(Class<?> actorClass, String actionName) {
         for (Class<?> c = actorClass; c != null && c != Object.class; c = c.getSuperclass()) {
-            ActionDoc doc = docFor(c.getName(), actionName);
+            ActionDoc doc = docOf(c, actionName);
             if (doc != null) return doc;
             for (Class<?> i : c.getInterfaces()) {
-                doc = docFor(i.getName(), actionName);
+                doc = docOf(i, actionName);
                 if (doc != null) return doc;
             }
         }
         return null;
     }
 
-    /** Same as {@link #docFor(Class, String)}, keyed by the class's fully-qualified name. */
-    public ActionDoc docFor(String className, String actionName) {
-        return docs.get(className + "." + actionName);
+    private ActionDoc docOf(Class<?> c, String actionName) {
+        ensureRead(c.getName(), c.getClassLoader());
+        return docs.get(c.getName() + "." + actionName);
     }
 
-    /** The number of documented actions. */
-    public int size() {
-        return docs.size();
+    /**
+     * What the manifest of the class named {@code className} (its binary name) says about the action,
+     * read through the loader this manifest was made with; the class itself only, not its supertypes.
+     */
+    public ActionDoc docFor(String className, String actionName) {
+        ensureRead(className, classLoader);
+        return docs.get(className + "." + actionName);
     }
 }
