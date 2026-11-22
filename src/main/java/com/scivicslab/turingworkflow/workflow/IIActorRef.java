@@ -129,7 +129,8 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
     }
 
     /**
-     * Stores what an action returned, for {@code ${result}} to expand to.
+     * Stores what an action returned, which the next action's argument reads as
+     * {@code jexl: result}.
      *
      * <p>{@code ActorRef} keeps the value as a plain string, since what an action returned is
      * this project's vocabulary rather than the actor model's. This pair is the typed view of

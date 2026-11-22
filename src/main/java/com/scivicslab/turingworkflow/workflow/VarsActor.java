@@ -130,23 +130,4 @@ public class VarsActor extends IIActorRef<Map<String, String>> {
         String names = String.join(", ", object.keySet());
         return new ActionResult(true, names.isEmpty() ? "(no variables)" : names);
     }
-
-    /**
-     * Expands variables in a string.
-     *
-     * <p>Replaces ${varName} patterns with their values from the variable map.</p>
-     *
-     * @param template the string containing ${...} patterns
-     * @return the expanded string
-     */
-    public String expand(String template) {
-        if (template == null) {
-            return "";
-        }
-        String result = template;
-        for (Map.Entry<String, String> entry : object.entrySet()) {
-            result = result.replace("${" + entry.getKey() + "}", entry.getValue());
-        }
-        return result;
-    }
 }

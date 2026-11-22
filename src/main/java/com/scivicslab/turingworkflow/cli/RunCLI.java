@@ -257,7 +257,8 @@ public class RunCLI {
         interpreter.setSelfActorRef(interpreterActor);
         system.addIIActor(interpreterActor);
 
-        // Put -P / -V variables into interpreter JSON state for ${varName} expansion
+        // Put -P / -V variables into the interpreter's JSON state, where an argument reads them
+        // as jexl: state.getString('key')
         for (Map.Entry<String, String> entry : variables.entrySet()) {
             String jsonArg = new JSONObject()
                 .put("path", entry.getKey())
