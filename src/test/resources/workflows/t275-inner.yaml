@@ -1,0 +1,6 @@
+name: t275-inner
+steps:
+  - states: ["0", "end"]
+    actions:
+      - actor: marks
+        method: innerDone

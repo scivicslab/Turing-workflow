@@ -18,7 +18,8 @@
 package com.scivicslab.turingworkflow.workflow;
 
 import java.io.InputStream;
-
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
@@ -28,7 +29,9 @@ import com.scivicslab.pojoactor.action.ActionResult;
  *
  * <p>This class is an alternative to {@link SubWorkflowCaller} that reuses
  * a single {@link Interpreter} instance across multiple sub-workflow calls.
- * This reduces object allocation overhead at the cost of thread synchronization.</p>
+ * This reduces object allocation overhead. A call that finds the reused instance busy (another
+ * call is running on it, or this one was made from inside a sub-workflow running on it) runs on an
+ * instance of its own instead of waiting.</p>
  *
  * <h2>Comparison with SubWorkflowCaller:</h2>
  * <table border="1">
@@ -56,7 +59,7 @@ import com.scivicslab.pojoactor.action.ActionResult;
  *   <tr>
  *     <td>Thread safety</td>
  *     <td>Fully concurrent</td>
- *     <td>Synchronized (serialized calls)</td>
+ *     <td>Fully concurrent; a call that finds the reused instance busy uses its own</td>
  *   </tr>
  *   <tr>
  *     <td>Complexity</td>
@@ -87,16 +90,16 @@ import com.scivicslab.pojoactor.action.ActionResult;
  * <ul>
  *   <li><strong>When to use</strong>: High-frequency sub-workflow calls with
  *       low concurrency (sequential calls)</li>
- *   <li><strong>When NOT to use</strong>: High concurrency scenarios where
- *       multiple threads call sub-workflows simultaneously (use {@link SubWorkflowCaller} instead)</li>
- *   <li><strong>Bottleneck</strong>: The {@code synchronized} method becomes
- *       a bottleneck under high concurrency</li>
+ *   <li><strong>Under concurrency</strong>: only one call at a time reuses the instance; the
+ *       others allocate as {@link SubWorkflowCaller} does</li>
  * </ul>
  *
  * <h2>Thread Safety:</h2>
- * <p>This class uses method-level synchronization to ensure thread safety.
- * Only one thread can execute a sub-workflow at a time. If multiple threads
- * call this actor concurrently, they will be serialized.</p>
+ * <p>No lock is held while a sub-workflow runs. A lock held there would be waited for by a call
+ * made from inside that sub-workflow (an apply child calling this caller, for example) on another
+ * thread, while the holder waits for that thread: a deadlock. On the same thread it would let the
+ * inner call reset the interpreter the outer call is still running. Instead an atomic flag hands
+ * the reused instance to one call at a time, and a call that does not get it builds its own.</p>
  *
  * @author devteam@scivicslab.com
  * @since 2.5.0
@@ -107,7 +110,9 @@ import com.scivicslab.pojoactor.action.ActionResult;
 public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
 
     private final Interpreter reusableInterpreter;
-    private int callCount = 0;
+    /** True while a call is running on {@link #reusableInterpreter}. */
+    private final AtomicBoolean reusableInUse = new AtomicBoolean();
+    private final AtomicInteger callCount = new AtomicInteger();
 
     /**
      * Constructs a new ReusableSubWorkflowCaller.
@@ -130,30 +135,47 @@ public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
     }
 
     /**
-     * Calls the specified sub-workflow synchronously using the reusable Interpreter.
+     * Calls the specified sub-workflow synchronously, on the reusable Interpreter when it is free.
      *
      * <p>The {@code args} parameter should contain the YAML filename
      * (e.g., "my-workflow.yaml"), either as a plain string or as a JSON array.</p>
+     *
+     * <p>No lock is held while the sub-workflow runs, so a call made from inside it (by an apply
+     * child, say) neither waits for this one nor disturbs it: it finds the reusable Interpreter
+     * busy and runs on an Interpreter of its own.</p>
      *
      * @param args the YAML filename (plain string or JSON array)
      * @return {@link ActionResult} indicating success or failure
      */
     @Action(value = "call", argsType = SubWorkflowCaller.SubWorkflowArgs.class)
-    public synchronized ActionResult call(SubWorkflowCaller.SubWorkflowArgs args) {
-        return callSubWorkflow(args.yaml());
+    public ActionResult call(SubWorkflowCaller.SubWorkflowArgs args) {
+        if (reusableInUse.compareAndSet(false, true)) {
+            try {
+                return callSubWorkflow(args.yaml(), reusableInterpreter);
+            } finally {
+                reusableInUse.set(false);
+            }
+        }
+        // The reused instance is busy: run on one of this call's own, without waiting.
+        Interpreter own = new Interpreter.Builder()
+            .loggerName("reusable-sub-workflow")
+            .team((IIActorSystem) system())
+            .build();
+        return callSubWorkflow(args.yaml(), own);
     }
 
     /**
-     * Calls a sub-workflow synchronously using the reusable Interpreter.
+     * Calls a sub-workflow synchronously on {@code interpreter}.
      *
      * <p><strong>Important</strong>: This method resets the Interpreter state
      * before each execution using {@link Interpreter#reset()}.</p>
      *
      * @param yamlFileName the name of the YAML file (e.g., "sub-workflow.yaml").
      *                     The file is loaded from {@code /workflows/[yamlFileName]}.
+     * @param interpreter the Interpreter to run it on, which no other call is using
      * @return {@link ActionResult} indicating success or failure
      */
-    private ActionResult callSubWorkflow(String yamlFileName) {
+    private ActionResult callSubWorkflow(String yamlFileName, Interpreter interpreter) {
         String actualFileName = yamlFileName;
         if (actualFileName == null || actualFileName.trim().isEmpty()) {
             return new ActionResult(false, "YAML filename cannot be null or empty");
@@ -166,7 +188,7 @@ public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
 
         try {
             // Reset the interpreter state
-            reusableInterpreter.reset();
+            interpreter.reset();
 
             // Load YAML file from classpath
             String resourcePath = "/workflows/" + actualFileName;
@@ -177,14 +199,14 @@ public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
                     "Sub-workflow YAML not found: " + resourcePath);
             }
 
-            reusableInterpreter.readYaml(yamlInput);
+            interpreter.readYaml(yamlInput);
 
             // Execute all steps of sub-workflow until completion
             int stepCount = 0;
             int maxSteps = 1000; // Safety limit to prevent infinite loops
 
             while (stepCount < maxSteps) {
-                ActionResult result = reusableInterpreter.execCode();
+                ActionResult result = interpreter.execCode();
                 stepCount++;
 
                 if (!result.isSuccess()) {
@@ -202,7 +224,7 @@ public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
                     "Sub-workflow exceeded maximum steps (" + maxSteps + ")");
             }
 
-            callCount++;
+            callCount.incrementAndGet();
             return new ActionResult(true,
                 "Sub-workflow called successfully: " + actualFileName +
                 " (steps: " + stepCount + ", reused interpreter)");
@@ -221,6 +243,6 @@ public class ReusableSubWorkflowCaller extends IIActorRef<Void> {
      * @return the call count
      */
     public int getCallCount() {
-        return callCount;
+        return callCount.get();
     }
 }
