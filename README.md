@@ -133,7 +133,8 @@ Multiple transitions from the same state provide conditional branching. Transiti
 
 ### State Pattern Matching
 
-- `"!end"` — matches any state that is not `"end"` (useful as a catch-all)
+- `"!end"` — matches any state that is not `"end"` (useful as a catch-all; let it record the state
+  and the last result, `jexl: result`, before it ends)
 
 ## Example: Turing Machine
 

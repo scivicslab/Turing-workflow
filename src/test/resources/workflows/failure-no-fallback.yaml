@@ -1,0 +1,6 @@
+name: failure-no-fallback
+steps:
+  - states: ["0", "end"]
+    actions:
+      - actor: net
+        method: connect

@@ -286,7 +286,7 @@ public class SchedulerIIARTest {
             "task,counter,action,args,abc,100,SECONDS");
 
         assertFalse(result.isSuccess(), "Should fail with number format error");
-        assertTrue(result.getResult().contains("Error"), "Should report error");
+        assertTrue(result.getResult().startsWith("error: java.lang.NumberFormatException"), result.getResult());
     }
 
     /**
@@ -299,6 +299,6 @@ public class SchedulerIIARTest {
             "task,counter,action,args,0,100,INVALID_UNIT");
 
         assertFalse(result.isSuccess(), "Should fail with invalid TimeUnit");
-        assertTrue(result.getResult().contains("Error"), "Should report error");
+        assertTrue(result.getResult().startsWith("error: java.lang.IllegalArgumentException"), result.getResult());
     }
 }

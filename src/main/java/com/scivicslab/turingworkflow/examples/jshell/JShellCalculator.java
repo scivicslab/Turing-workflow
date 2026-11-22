@@ -92,7 +92,7 @@ public class JShellCalculator implements CallableByActionName {
             }
         } catch (Exception e) {
             System.err.println("[JShellCalculator.callByActionName()] エラー: " + e.getMessage());
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, "jshell." + actionName);
         }
     }
 

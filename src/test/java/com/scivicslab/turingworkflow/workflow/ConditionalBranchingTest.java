@@ -569,7 +569,8 @@ public class ConditionalBranchingTest {
             ActionResult result = interpreter.execCode();
 
             assertFalse(result.isSuccess());
-            assertEquals("No matching state transition", result.getResult());
+            // The state where no transition matched, and the reason the last action was false.
+            assertEquals("No matching state transition from '0'; last failed action: alwaysFalse", result.getResult());
         }
 
         @Test

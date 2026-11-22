@@ -1,0 +1,64 @@
+# A failed action is false, and the reason is in the last result: the YAML decides what to do.
+# An argument reads the last result as the expression variable `result` ("jexl: result").
+#
+# An action that throws is false too; its result is then
+#   error: <exception class>: <message> (in <actor>.<method>)
+# so a workflow tells an error from an expected false by that "error:" prefix.
+#
+# Every action -- a condition such as onlyIf included -- replaces the last result with its own
+# message. Keep the reason you want to branch on before you test it, as "keep-the-reason" does.
+name: branch-on-failure-reason
+steps:
+  - states: ["0", "found"]
+    label: look-up
+    actions:
+      - actor: lookup
+        method: find
+        arguments: ["item-42"]
+
+  # look-up was false. Keep why, then choose the route on that.
+  - states: ["0", "failed"]
+    label: keep-the-reason
+    actions:
+      - actor: this
+        method: putJson
+        arguments: {path: reason, value: "jexl: result"}
+
+  - states: ["failed", "error"]
+    label: it-was-an-error
+    actions:
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getString('reason').startsWith('error:')"
+
+  - states: ["failed", "not-found"]
+    label: it-was-an-expected-false
+    actions:
+      - actor: this
+        method: doNothing
+
+  - states: ["found", "end"]
+    actions:
+      - actor: this
+        method: putJson
+        arguments: {path: route, value: found}
+
+  - states: ["not-found", "end"]
+    actions:
+      - actor: this
+        method: putJson
+        arguments: {path: route, value: not-found}
+
+  - states: ["error", "end"]
+    actions:
+      - actor: this
+        method: putJson
+        arguments: {path: route, value: error}
+
+  # Catch-all: a state nothing above handles. Record why before ending, rather than end blindly.
+  - states: ["!end", "end"]
+    label: record-and-end
+    actions:
+      - actor: this
+        method: print
+        arguments: "jexl: 'ended from an unhandled state; last result: ' + result"

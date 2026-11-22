@@ -86,7 +86,7 @@ public class ParallelMapActor extends IIActorRef<Object> {
         try {
             n = Integer.parseInt(inList.callByActionName("size", "").getResult().trim());
         } catch (Exception e) {
-            return new ActionResult(false, "parallel-map.run: cannot read size of " + inListName);
+            return ActionResult.error(e, "parallel-map.run, reading the size of " + inListName);
         }
         List<String> items = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
@@ -113,7 +113,7 @@ public class ParallelMapActor extends IIActorRef<Object> {
             }
         } catch (Exception e) {
             pool.shutdownNow();
-            return new ActionResult(false, "parallel-map.run: a task failed: " + e.getMessage());
+            return ActionResult.error(e, "parallel-map.run, a sub-workflow run");
         } finally {
             pool.shutdown();
         }

@@ -163,7 +163,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                     return new ActionResult(false, "Unknown action: " + actionName);
             }
         } catch (Exception e) {
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, "loader." + actionName);
         }
     }
 
@@ -220,7 +220,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             return new ActionResult(true, "Loaded JAR: " + jarPath);
 
         } catch (Exception e) {
-            return new ActionResult(false, "Failed to load JAR: " + e.getMessage());
+            return ActionResult.error(e, "loader.loadJar");
         }
     }
 
@@ -348,8 +348,8 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                         .getDeclaredConstructor(String.class, IIActorSystem.class)
                         .newInstance(actorName, system);
                 } catch (NoSuchMethodException e) {
-                    return new ActionResult(false,
-                        "IIActorRef subclass must have constructor (String actorName, IIActorSystem system): " + className);
+                    return ActionResult.error(e, "loader.createChild, an IIActorRef subclass needs a"
+                        + " (String actorName, IIActorSystem system) constructor: " + className);
                 }
             } else {
                 // Legacy pattern: POJO implementing CallableByActionName
@@ -387,7 +387,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                 "' from class: " + className);
 
         } catch (Exception e) {
-            return new ActionResult(false, "Failed to create child: " + e.getMessage());
+            return ActionResult.error(e, "loader.createChild");
         }
     }
 
@@ -455,7 +455,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             return new ActionResult(true,
                 "Removed " + removed.size() + " actor(s): " + String.join(", ", removed));
         } catch (Exception e) {
-            return new ActionResult(false, "Failed to remove child: " + e.getMessage());
+            return ActionResult.error(e, "loader.removeChild");
         }
     }
 
@@ -581,7 +581,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             }
 
         } catch (Exception e) {
-            return new ActionResult(false, "Failed to load from JAR: " + e.getMessage());
+            return ActionResult.error(e, "loader.loadFromJar");
         }
     }
 
@@ -638,7 +638,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                 "Registered actors from provider: " + providerName);
 
         } catch (Exception e) {
-            return new ActionResult(false, "Failed to create from provider: " + e.getMessage());
+            return ActionResult.error(e, "loader.createFromProvider");
         }
     }
 
@@ -705,7 +705,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                 "Available providers: " + String.join(", ", providerNames));
 
         } catch (Exception e) {
-            return new ActionResult(false, "Failed to list providers: " + e.getMessage());
+            return ActionResult.error(e, "loader.listProviders");
         }
     }
 
@@ -770,7 +770,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             return new ActionResult(true, result);
 
         } catch (Exception e) {
-            return new ActionResult(false, "Failed to load JAR: " + e.getMessage());
+            return ActionResult.error(e, "loader.loadProvidersFromJar");
         }
     }
 

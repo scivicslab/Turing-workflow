@@ -1,0 +1,16 @@
+name: failure-reason-direct
+steps:
+  - states: ["0", "connected"]
+    actions:
+      - actor: net
+        method: connect
+        execution: DIRECT
+  - states: ["0", "recorded"]
+    actions:
+      - actor: recorder
+        method: record
+        arguments: ["jexl: result"]
+  - states: ["recorded", "end"]
+    actions:
+      - actor: this
+        method: doNothing

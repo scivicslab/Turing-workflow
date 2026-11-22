@@ -66,21 +66,68 @@ params:
   The **first transition whose every action succeeds** wins and advances to `nextState`.
   Transitions whose actions fail are skipped (the engine moves to the next candidate).
 - The `!end` wildcard in `from` matches any state that is not `"end"`, enabling catch-all fallback transitions.
+  A catch-all records why it was reached (the state and the last result) before it ends, rather
+  than ending blindly.
+
+### When an action fails
+
+A failed action is **false**. The engine does not stop the workflow, rethrow, or invent a third
+outcome: it tries the next candidate transition from the same state, and the YAML decides what a
+false means. The reason is in the last result, which the next transition reads as the expression
+variable `result` (`jexl: result`).
+
+- An action that answers false on purpose carries its own message, for example `not found: item-42`.
+- An action that threw is false too. Its result names the exception, always in this form:
+  `error: <exception class>: <message> (in <actor>.<method>)`, for example
+  `error: java.net.ConnectException: Connection refused (in net.connect)`. The class is the root
+  one, not an `ExecutionException` or `InvocationTargetException` around it.
+- So a workflow tells an error from an expected false by the `error:` prefix.
+- Every action, a condition such as `onlyIf` included, replaces the last result with its own
+  message. Keep the reason you want to branch on before testing it:
+
+```yaml
+  - states: ["0", "found"]
+    actions:
+      - actor: lookup
+        method: find
+        arguments: ["item-42"]
+  - states: ["0", "failed"]            # find was false: keep why
+    actions:
+      - actor: this
+        method: putJson
+        arguments: {path: reason, value: "jexl: result"}
+  - states: ["failed", "error"]        # it threw
+    actions:
+      - actor: this
+        method: onlyIf
+        arguments: "jexl: state.getString('reason').startsWith('error:')"
+  - states: ["failed", "not-found"]    # an expected false
+    actions:
+      - actor: this
+        method: doNothing
+```
+
+When no transition matches, the run's result says from which state, followed by the last failed
+action's reason: `No matching state transition from 'fetch'; last failed action: error: ...`.
+The full sample is `src/main/resources/examples/branch-on-failure-reason.yaml`.
 - `arguments` may be a plain string, a JSON array, or a YAML map/object.
 
 ### Variable substitution
 
-Variables passed via `-P key=value` on the CLI (or set inside the workflow) are available
-anywhere in `arguments` as `${varName}`. The interpreter also stores the `result` of the
-most recently executed action as `${result}`.
+Variables passed via `-P key=value` on the CLI (or set inside the workflow) are stored in the
+interpreter's own state. The interpreter also keeps the message of the most recently executed
+action as the last result. An argument reads both through a `jexl:` expression: `state` is the
+interpreter's state and `result` is the last result. The interpreter does not expand `${...}`
+in arguments.
 
 ```yaml
-arguments: "${ocr.file}"      # expands to the value of variable ocr.file
-arguments: "${result}"        # expands to the result of the previous action
+arguments: "jexl: state.getString('ocr.file')"   # the value of variable ocr.file
+arguments: "jexl: result"                        # the result of the previous action
 ```
 
-`${result}` is evaluated **before** the current action executes, so it always holds the
-result of the **previous** action — even across step boundaries.
+The expression is evaluated **before** the current action executes, so `result` always holds
+the result of the **previous** action — even across step boundaries, and also when that action
+was false.
 
 ### `$(actor.method)` — Inline method call embedding
 
@@ -104,8 +151,8 @@ arguments: "$(list:items.get)"         # reads index 0 of list:items (default)
 | `states` patterns | `jexl:expr` | Apache Commons JEXL 3 |
 | `calc.eval` argument | JEXL expression | Apache Commons JEXL 3 |
 
-`$(actor.method)` is expanded **before** `${varName}`. `${result}` holds the `message` from the
-previous `ActionResult` and is substituted as part of `${varName}` processing.
+The last result — the `message` of the previous `ActionResult` — is the variable `result` in a
+`jexl:` argument; the interpreter's state is `state`.
 
 ### JEXL expressions in `states`
 
@@ -198,6 +245,9 @@ and the actors a run created are the actors that run removes
   - states: ["!end", "end"]
     label: tear-down-actor-tree
     actions:
+      - actor: out
+        method: print
+        arguments: {message: "jexl: 'ending from state ' + currentState + '; last result: ' + result"}
       - actor: loader
         method: removeChild
         arguments: "openalex"
@@ -319,9 +369,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -381,9 +432,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -413,9 +465,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -477,9 +530,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 詳細は `reference/patterns.md` を参照
@@ -526,6 +580,8 @@ When asked to generate a Turing workflow YAML, follow these rules:
 4. **Branching**: place the success transition before the failure transition when both share
    the same `from` state. The engine tries them in document order.
 5. **Always include a catch-all**: `states: ["!end", "end"]` at the very end, with cleanup actions.
+   Make it record why it was reached before it ends (`currentState` and `jexl: result`), rather
+   than end blindly.
 6. **Use `label:` on every transition** to aid debugging and future patching.
 7. **Variable substitution**: use `${varName}` in arguments; pass variables via `-P` on the CLI.
    **Always include a `params:` section** for every `${varName}` placeholder used in the workflow.

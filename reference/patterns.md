@@ -30,9 +30,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -60,9 +61,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -90,9 +92,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -152,9 +155,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -197,9 +201,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -250,9 +255,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -304,9 +310,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -384,9 +391,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -446,7 +454,7 @@ steps:
     actions:
       - actor: this
         method: print
-        arguments: "Workflow ended unexpectedly."
+        arguments: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"
 ```
 
 ---
@@ -510,9 +518,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -538,7 +547,7 @@ steps:
     actions:
       - actor: out
         method: error
-        arguments: "Sub-workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Sub-workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 **main.yaml:**
@@ -577,9 +586,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -612,7 +622,7 @@ steps:
     actions:
       - actor: out
         method: error
-        arguments: "Sub-workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Sub-workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 **main-with-data.yaml (parent):**
@@ -664,9 +674,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -730,9 +741,10 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
+      # Record why before ending: the state nothing handled and the last action's result.
       - actor: out
         method: error
-        arguments: "Workflow ended unexpectedly."
+        arguments: {message: "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -882,7 +894,7 @@ steps:
         method: closeOutput
       - actor: log
         method: add
-        arguments: {"source": "kana-kanji", "type": "stderr", "data": "Workflow ended unexpectedly"}
+        arguments: {"source": "kana-kanji", "type": "stderr", "data": "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ---
@@ -930,7 +942,7 @@ steps:
     actions:
       - actor: log
         method: add
-        arguments: {"source": "workflow", "type": "stderr", "data": "Ended unexpectedly"}
+        arguments: {"source": "workflow", "type": "stderr", "data": "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ### Template B — LLM processing loop with promptBuilder
@@ -1017,7 +1029,7 @@ steps:
     actions:
       - actor: log
         method: add
-        arguments: {"source": "workflow", "type": "stderr", "data": "Ended unexpectedly"}
+        arguments: {"source": "workflow", "type": "stderr", "data": "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
 
 ### Template C — Multi-node infrastructure workflow
@@ -1070,5 +1082,5 @@ steps:
     actions:
       - actor: log
         method: add
-        arguments: {"source": "workflow", "type": "stderr", "data": "Ended unexpectedly"}
+        arguments: {"source": "workflow", "type": "stderr", "data": "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```

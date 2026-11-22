@@ -70,7 +70,7 @@ public class OutActor extends IIActorRef<Void> {
             System.out.print(result);
             return new ActionResult(true, result);
         } catch (Exception e) {
-            return new ActionResult(false, "out.printf: " + e.getMessage());
+            return ActionResult.error(e, "out.printf");
         }
     }
 }

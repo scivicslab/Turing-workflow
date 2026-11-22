@@ -237,7 +237,7 @@ public class SubworkflowCallTest {
             ActionResult result = interpreter.runWorkflow("nonexistent.yaml");
 
             assertFalse(result.isSuccess());
-            assertTrue(result.getResult().contains("not found"));
+            assertTrue(result.getResult().startsWith("error: java.io.FileNotFoundException"), result.getResult());
 
             java.nio.file.Files.delete(tempDir);
         }

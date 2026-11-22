@@ -199,6 +199,7 @@ public class Interpreter {
                 argumentString = convertArgumentsToJson(a);
             } catch (ArgumentExpressionException e) {
                 ActionResult badArgument = new ActionResult(false, e.getMessage());
+                recordLastResult(badArgument);
                 logger.exiting(CLASS_NAME, "action", badArgument);
                 return badArgument;
             }
@@ -230,6 +231,7 @@ public class Interpreter {
             if (actors.isEmpty()) {
                 logger.warning("Actor not found: " + actorPath);
                 ActionResult notFoundResult = new ActionResult(false, "Actor not found: " + actorPath);
+                recordLastResult(notFoundResult);
                 logger.exiting(CLASS_NAME, "action", notFoundResult);
                 return notFoundResult;
             }
@@ -244,42 +246,39 @@ public class Interpreter {
                     executionMode = ExecutionMode.POOL;  // Default to POOL
                 }
 
-                if (executionMode == ExecutionMode.POOL && system != null
-                        && system.getManagedThreadPool() instanceof ManagedThreadPool pool
-                        && pool.ownsCurrentThread()) {
-                    // POOL, already on one of the pool's real threads: run here. This happens in a
-                    // sub-workflow, which this.call runs on the real thread of the calling action;
-                    // handing the action to the pool and waiting would deadlock once every real
-                    // thread of the pool waits the same way (with one real thread, at once).
-                    result = actorAR.callByActionName(action, argumentString);
-                } else if (executionMode == ExecutionMode.POOL && system != null) {
-                    // POOL: Execute on managed thread pool (safe for heavy operations)
-                    try {
+                // A failed action is false, however it failed: an exception becomes a failed
+                // result whose text names it, and the workflow reads that in ${result}.
+                String where = actorAR.getName() + "." + action;
+                try {
+                    if (executionMode == ExecutionMode.POOL && system != null
+                            && system.getManagedThreadPool() instanceof ManagedThreadPool pool
+                            && pool.ownsCurrentThread()) {
+                        // POOL, already on one of the pool's real threads: run here. This happens in
+                        // a sub-workflow, which this.call runs on the real thread of the calling
+                        // action; handing the action to the pool and waiting would deadlock once
+                        // every real thread of the pool waits the same way (with one, at once).
+                        result = actorAR.callByActionName(action, argumentString);
+                    } else if (executionMode == ExecutionMode.POOL && system != null) {
+                        // POOL: Execute on managed thread pool (safe for heavy operations)
                         result = CompletableFuture.supplyAsync(
                             () -> actorAR.callByActionName(action, argumentString),
                             system.getManagedThreadPool()
                         ).get();
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        logger.log(Level.WARNING, "Action interrupted", e);
-                        ActionResult failResult = new ActionResult(false, "Action interrupted: " + e.getMessage());
-                        logger.exiting(CLASS_NAME, "action", failResult);
-                        return failResult;
-                    } catch (ExecutionException e) {
-                        logger.log(Level.WARNING, "Action execution failed", e);
-                        ActionResult failResult = new ActionResult(false, "Action failed: " + e.getCause().getMessage());
-                        logger.exiting(CLASS_NAME, "action", failResult);
-                        return failResult;
+                    } else {
+                        // DIRECT: Direct synchronous call (for light operations)
+                        result = actorAR.callByActionName(action, argumentString);
                     }
-                } else {
-                    // DIRECT: Direct synchronous call (for light operations)
-                    result = actorAR.callByActionName(action, argumentString);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    logger.log(Level.WARNING, "Action interrupted: " + where, e);
+                    result = ActionResult.error(e, where);
+                } catch (Exception e) {
+                    logger.log(Level.WARNING, "Action failed: " + where, e);
+                    result = ActionResult.error(e, where);
                 }
 
                 // Save the result for variable expansion (${result})
-                if (selfActorRef != null) {
-                    selfActorRef.setLastResult(result);
-                }
+                recordLastResult(result);
 
                 // If any action returns false, abort this step
                 if (!result.isSuccess()) {
@@ -291,6 +290,16 @@ public class Interpreter {
         ActionResult successResult = new ActionResult(true, "");
         logger.exiting(CLASS_NAME, "action", successResult);
         return successResult;
+    }
+
+    /**
+     * Keeps an action's result as {@code ${result}}, failed or not, so that the next candidate
+     * transition can read why the action was false.
+     */
+    private void recordLastResult(ActionResult result) {
+        if (selfActorRef != null) {
+            selfActorRef.setLastResult(result);
+        }
     }
 
     /** Marks an argument value as an expression rather than text to substitute into. */
@@ -613,6 +622,7 @@ public class Interpreter {
         }
 
         // Try all steps, starting from currentTransitionIndex and wrapping around
+        ActionResult lastFailure = null;
         int stepsCount = code.getTransitions().size();
         for (int attempts = 0; attempts < stepsCount; attempts++) {
             // Wrap around to the beginning when reaching the end
@@ -636,7 +646,7 @@ public class Interpreter {
                                 pauseLock.wait();
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
-                                return new ActionResult(false, "Interrupted at breakpoint");
+                                return ActionResult.error(e, "waiting at a breakpoint in state '" + currentState + "'");
                             }
                         }
                     }
@@ -651,7 +661,7 @@ public class Interpreter {
                         Thread.sleep(transition.getDelay());
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-                        return new ActionResult(false, "Interrupted during delay");
+                        return ActionResult.error(e, "the delay before a transition from '" + currentState + "'");
                     }
                 }
 
@@ -660,6 +670,9 @@ public class Interpreter {
 
                 // Try to execute actions
                 ActionResult actionResult = action();
+                if (!actionResult.isSuccess()) {
+                    lastFailure = actionResult;
+                }
 
                 if (actionResult.isSuccess()) {
                     // Hook: notify subclasses that transition succeeded
@@ -681,7 +694,13 @@ public class Interpreter {
             currentTransitionIndex++;
         }
 
-        ActionResult noMatchResult = new ActionResult(false, "No matching state transition");
+        // Say where the workflow stopped and, when an action failed on the way, why: the last
+        // failure's reason would otherwise be lost to this message.
+        String noMatch = "No matching state transition from '" + currentState + "'";
+        if (lastFailure != null) {
+            noMatch += "; last failed action: " + lastFailure.getResult();
+        }
+        ActionResult noMatchResult = new ActionResult(false, noMatch);
         logger.exiting(CLASS_NAME, "execCode", noMatchResult);
         return noMatchResult;
     }
@@ -794,7 +813,7 @@ public class Interpreter {
                 try {
                     stream = new java.io.FileInputStream(workflowFile);
                 } catch (java.io.FileNotFoundException e) {
-                    return new ActionResult(false, "Workflow not found: " + workflowFile);
+                    return ActionResult.error(e, "runWorkflow " + workflowFile);
                 }
             }
 
@@ -805,7 +824,7 @@ public class Interpreter {
 
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error running workflow: " + workflowFile, e);
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, "runWorkflow " + workflowFile);
         }
     }
 
@@ -1458,7 +1477,7 @@ public class Interpreter {
 
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Subworkflow error: " + workflowFile, e);
-            return new ActionResult(false, "Subworkflow error: " + e.getMessage());
+            return ActionResult.error(e, "call " + workflowFile);
 
         } finally {
             // === Step 4: removeChild (always executed) ===
@@ -1582,7 +1601,7 @@ public class Interpreter {
                                 actor.getName(), result.getResult()));
                         }
                     } catch (Exception e) {
-                        failures.put(actor.getName(), e.getMessage());
+                        failures.put(actor.getName(), ActionResult.errorText(e, actor.getName() + "." + methodName));
                         logger.log(Level.WARNING, "Exception on " + actor.getName(), e);
                     }
                 });
@@ -1609,7 +1628,7 @@ public class Interpreter {
 
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Apply error", e);
-            return new ActionResult(false, "Apply error: " + e.getMessage());
+            return ActionResult.error(e, "apply");
         }
     }
 

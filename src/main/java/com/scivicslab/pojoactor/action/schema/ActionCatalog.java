@@ -99,7 +99,7 @@ public class ActionCatalog implements CallableByActionName {
                 default -> new ActionResult(false, "Unknown action: " + actionName);
             };
         } catch (Exception e) {
-            return new ActionResult(false, actionName + " failed: " + e.getMessage());
+            return ActionResult.error(e, actionName);
         }
     }
 

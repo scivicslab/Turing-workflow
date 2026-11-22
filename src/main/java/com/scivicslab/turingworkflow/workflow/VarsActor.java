@@ -117,7 +117,7 @@ public class VarsActor extends IIActorRef<Map<String, String>> {
             }
             return new ActionResult(false, "Expected [name, value]");
         } catch (Exception e) {
-            return new ActionResult(false, "Invalid arguments: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".set, expected [name, value]");
         }
     }
 

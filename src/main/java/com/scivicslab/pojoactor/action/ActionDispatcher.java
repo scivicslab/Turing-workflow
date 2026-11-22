@@ -204,22 +204,26 @@ public class ActionDispatcher {
             try {
                 arg = JSON_MAPPER.readValue(args, paramType);
             } catch (JsonProcessingException e) {
-                return new ActionResult(false, "Failed to parse arguments for " + actionName
-                        + " as " + paramType.getSimpleName() + ": " + e.getMessage());
+                return ActionResult.error(e, actorName() + "." + actionName
+                        + ", arguments as " + paramType.getSimpleName());
             }
         }
 
         try {
             return (ActionResult) method.invoke(target, arg);
         } catch (InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            String message = cause != null ? cause.getMessage() : e.getMessage();
             logger.log(Level.WARNING, "Error invoking @Action " + actionName, e);
-            return new ActionResult(false, "Error in " + actionName + ": " + message);
+            return ActionResult.error(e, actorName() + "." + actionName);
         } catch (IllegalAccessException e) {
             logger.log(Level.SEVERE, "Cannot access @Action method " + actionName, e);
-            return new ActionResult(false, "Cannot access " + actionName + ": " + e.getMessage());
+            return ActionResult.error(e, actorName() + "." + actionName);
         }
+    }
+
+    /** The name a failure's reason gives the target: its actor name, or its class's simple name. */
+    private String actorName() {
+        return target instanceof com.scivicslab.pojoactor.core.ActorRef<?> ref
+                ? ref.getName() : target.getClass().getSimpleName();
     }
 
     /**
@@ -263,8 +267,7 @@ public class ActionDispatcher {
         try {
             argsNode = JSON_MAPPER.readTree(args);
         } catch (JsonProcessingException e) {
-            return new ActionResult(false, "Failed to parse arguments for " + actionName
-                    + " as JSON: " + e.getMessage());
+            return ActionResult.error(e, actorName() + "." + actionName + ", arguments as JSON");
         }
 
         JsonSchema schema = SchemaFactoryHolder.INSTANCE.getSchema(schemaNode);

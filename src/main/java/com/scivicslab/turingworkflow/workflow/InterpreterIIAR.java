@@ -19,7 +19,6 @@ package com.scivicslab.turingworkflow.workflow;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.ExecutionException;
@@ -212,18 +211,15 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
         try (InputStream input = new FileInputStream(new File(path))) {
             this.tell((Interpreter i) -> i.readYaml(input)).get();
             return new ActionResult(true, "YAML loaded successfully");
-        } catch (FileNotFoundException e) {
-            logger.log(Level.SEVERE, String.format("file not found: %s", path), e);
-            return new ActionResult(false, "File not found: " + path);
         } catch (IOException e) {
-            logger.log(Level.SEVERE, String.format("IOException: %s", path), e);
-            return new ActionResult(false, "IO error: " + path);
+            logger.log(Level.SEVERE, String.format("readYaml: %s", path), e);
+            return ActionResult.error(e, getName() + ".readYaml " + path);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new ActionResult(false, "Interrupted");
+            return ActionResult.error(e, getName() + ".readYaml " + path);
         } catch (ExecutionException e) {
             logger.log(Level.SEVERE, String.format("readYaml: %s", path), e);
-            return new ActionResult(false, "Execution error");
+            return ActionResult.error(e, getName() + ".readYaml " + path);
         }
     }
 
@@ -250,10 +246,10 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
             return new ActionResult(true, "Slept for " + millis + "ms");
         } catch (NumberFormatException e) {
             logger.log(Level.SEVERE, String.format("Invalid sleep duration: %s", text), e);
-            return new ActionResult(false, "Invalid sleep duration: " + text);
+            return ActionResult.error(e, getName() + ".sleep, expected a number of milliseconds");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new ActionResult(false, "Interrupted");
+            return ActionResult.error(e, getName() + ".sleep");
         }
     }
 
@@ -317,10 +313,10 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
             return new ActionResult(true, "currentState set to: " + state);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new ActionResult(false, "Interrupted");
+            return ActionResult.error(e, getName() + ".setCurrentState");
         } catch (ExecutionException e) {
             logger.log(Level.SEVERE, String.format("setCurrentState: %s", state), e);
-            return new ActionResult(false, "Execution error");
+            return ActionResult.error(e, getName() + ".setCurrentState");
         }
     }
 
@@ -332,10 +328,10 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.log(Level.SEVERE, String.format("actionName = %s, args = %s", actionName, args), e);
-            return new ActionResult(false, "Interrupted");
+            return ActionResult.error(e, getName() + "." + actionName);
         } catch (ExecutionException e) {
             logger.log(Level.SEVERE, String.format("actionName = %s, args = %s", actionName, args), e);
-            return new ActionResult(false, "Execution error");
+            return ActionResult.error(e, getName() + "." + actionName);
         }
     }
 

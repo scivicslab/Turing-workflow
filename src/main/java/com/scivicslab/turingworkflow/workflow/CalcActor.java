@@ -121,7 +121,7 @@ public class CalcActor extends IIActorRef<Accumulator> {
             object.evaluate(args.expression());
             return new ActionResult(true, object.toString());
         } catch (Exception e) {
-            return new ActionResult(false, "calc.eval: " + e.getMessage());
+            return ActionResult.error(e, "calc.eval");
         }
     }
 

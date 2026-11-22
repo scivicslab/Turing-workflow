@@ -1,0 +1,15 @@
+name: failure-reason
+steps:
+  - states: ["0", "connected"]
+    actions:
+      - actor: net
+        method: connect
+  - states: ["0", "recorded"]
+    actions:
+      - actor: recorder
+        method: record
+        arguments: ["jexl: result"]
+  - states: ["recorded", "end"]
+    actions:
+      - actor: this
+        method: doNothing

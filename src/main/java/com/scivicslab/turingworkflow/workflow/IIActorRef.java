@@ -263,7 +263,7 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
             putJson(path, value);
             return new ActionResult(true, "Stored " + path + "=" + value);
         } catch (Exception e) {
-            return new ActionResult(false, "putJson error: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".putJson");
         }
     }
 
@@ -300,7 +300,7 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
             putJson(path + "[" + end + "]", value);
             return new ActionResult(true, "Added to " + path + "[" + end + "]=" + value);
         } catch (Exception e) {
-            return new ActionResult(false, "appendJson error: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".appendJson");
         }
     }
 
@@ -343,7 +343,7 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
             String value = getJsonString(path);
             return new ActionResult(true, value != null ? value : "");
         } catch (Exception e) {
-            return new ActionResult(false, "getJson error: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".getJson");
         }
     }
 
@@ -369,7 +369,7 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
             boolean exists = hasJson(path);
             return new ActionResult(true, exists ? "true" : "false");
         } catch (Exception e) {
-            return new ActionResult(false, "hasJson error: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".hasJson");
         }
     }
 

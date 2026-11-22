@@ -127,7 +127,7 @@ public class StringActor extends IIActorRef<TextSlot> {
             object.replace(target, replacement);
             return new ActionResult(true, object.get());
         } catch (Exception e) {
-            return new ActionResult(false, "str.replace: expected [target, replacement]: " + e.getMessage());
+            return ActionResult.error(e, "str.replace, expected [target, replacement]");
         }
     }
 
@@ -141,7 +141,7 @@ public class StringActor extends IIActorRef<TextSlot> {
             }
             return new ActionResult(true, object.substring(start));
         } catch (Exception e) {
-            return new ActionResult(false, "str.substring: expected [start] or [start, end]: " + e.getMessage());
+            return ActionResult.error(e, "str.substring, expected [start] or [start, end]");
         }
     }
 

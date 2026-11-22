@@ -131,7 +131,7 @@ public class MultiplexerAccumulatorIIAR extends IIActorRef<MultiplexerAccumulato
             return new ActionResult(true, "Enqueued");
         } catch (Exception e) {
             writeToStderr(args, e);
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".add");
         }
     }
 
@@ -154,7 +154,7 @@ public class MultiplexerAccumulatorIIAR extends IIActorRef<MultiplexerAccumulato
             return new ActionResult(true, summary);
         } catch (ExecutionException | InterruptedException e) {
             logger.log(Level.SEVERE, "Error in getSummary", e);
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".getSummary");
         }
     }
 
@@ -171,7 +171,7 @@ public class MultiplexerAccumulatorIIAR extends IIActorRef<MultiplexerAccumulato
             return new ActionResult(true, String.valueOf(count));
         } catch (ExecutionException | InterruptedException e) {
             logger.log(Level.SEVERE, "Error in getCount", e);
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".getCount");
         }
     }
 
@@ -188,7 +188,7 @@ public class MultiplexerAccumulatorIIAR extends IIActorRef<MultiplexerAccumulato
             return new ActionResult(true, "Cleared");
         } catch (ExecutionException | InterruptedException e) {
             logger.log(Level.SEVERE, "Error in clear", e);
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, getName() + ".clear");
         }
     }
 }

@@ -181,8 +181,7 @@ public class SubWorkflowCaller extends IIActorRef<Void> {
                 " (steps: " + stepCount + ")");
 
         } catch (Exception e) {
-            return new ActionResult(false,
-                "Sub-workflow call error: " + e.getMessage());
+            return ActionResult.error(e, "sub-workflow call");
         } finally {
             System.out.println("[SUBWORKFLOW_END:" + baseName + ":" + depth + "]");
             callDepth.set(depth);

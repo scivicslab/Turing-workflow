@@ -327,7 +327,7 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
             }
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error in action " + actionName, e);
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, "scheduler." + actionName);
         }
     }
 

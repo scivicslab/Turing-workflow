@@ -98,7 +98,7 @@ public class AccumulatorIIAR extends IIActorRef<Accumulator> {
             }
         } catch (Exception e) {
             logger.log(Level.SEVERE, "Error in " + actionName, e);
-            return new ActionResult(false, "Error: " + e.getMessage());
+            return ActionResult.error(e, getName() + "." + actionName);
         }
     }
 
