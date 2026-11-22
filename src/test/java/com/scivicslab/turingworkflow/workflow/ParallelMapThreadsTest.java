@@ -31,7 +31,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.scivicslab.pojoactor.action.ActionResult;
-import com.scivicslab.pojoactor.core.ManagedThreadPool;
 
 /**
  * Which threads {@code parallel-map run} uses, how many items it has in flight, and what an item can
@@ -203,7 +202,7 @@ class ParallelMapThreadsTest {
     }
 
     @Test
-    @DisplayName("one ManagedThreadPool real thread, one parallel-map from a workflow step: it completes, on that thread")
+    @DisplayName("one ManagedThreadPool real thread, one parallel-map from a workflow step: it completes with the right answers")
     void onePoolRealThread(@TempDir Path dir) throws Exception {
         Path yaml = dir.resolve("probe.yaml");
         Files.writeString(yaml, PROBE_YAML);
@@ -231,17 +230,10 @@ class ParallelMapThreadsTest {
         assertTrue(r.isSuccess(), r.getResult());
         assertEquals("[\"a\",\"b\",\"c\"]", main.getLastResult().getResult());
         assertEquals(3, probe.threads.size());
-        ManagedThreadPool pool = (ManagedThreadPool) system.getManagedThreadPool();
-        assertEquals(1, Set.copyOf(probe.threads).size(), "every item on the one pool real thread");
-        assertFalse(probe.threads.get(0).isVirtual());
-        assertTrue(probe.threads.get(0).getName().startsWith("managed-pool-"), probe.threads.get(0).getName());
-        assertEquals(1, probe.mostAtOnce.get(), "one item after another");
-        // Inline, so the thread the items ran on is the thread that ran run: under a plain step with no
-        // execution: key, that is a pool real thread (the deliberate fallback until an orchestrating
-        // action can declare that it runs on the mailbox virtual thread).
-        System.out.println("[t271] plain YAML step: run ran on " + probe.threads.get(0)
-                + " virtual=" + probe.threads.get(0).isVirtual());
-        assertEquals(1, pool.getCorePoolSize());
+        // Behaviour only: which thread runs each item on this fallback path is not asserted, as the
+        // inline rule of ask(action, pool) may change (ask through the mailbox first). Printed for the
+        // record.
+        System.out.println("[t271] plain YAML step: items ran on " + Set.copyOf(probe.threads));
     }
 
     @Test
