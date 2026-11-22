@@ -94,7 +94,13 @@ public class ActionDispatcher {
 
     private final Object target;
     private final ActionSchemaRegistry schemaRegistry;
-    private Map<String, Method> actionMethods = null;
+    /**
+     * The {@code @Action} methods by action name, built on the first call and published only once
+     * it is complete. The first calls on a fresh actor can come from several threads at once (the
+     * ManagedThreadPool real threads of POOL actions, other callers), so a thread must never see a
+     * map that another thread is still filling.
+     */
+    private volatile Map<String, Method> actionMethods;
 
     /**
      * Creates a dispatcher that will scan and invoke {@link Action @Action}-annotated
@@ -125,12 +131,13 @@ public class ActionDispatcher {
         this.schemaRegistry = schemaRegistry;
     }
 
-    private void discover() {
-        if (actionMethods != null) {
-            return;
+    private Map<String, Method> discover() {
+        Map<String, Method> found = actionMethods;
+        if (found != null) {
+            return found;
         }
 
-        actionMethods = new HashMap<>();
+        Map<String, Method> methods = new HashMap<>();
 
         for (Method method : target.getClass().getMethods()) {
             Action action = method.getAnnotation(Action.class);
@@ -162,7 +169,7 @@ public class ActionDispatcher {
             }
 
             String actionName = action.value();
-            if (actionMethods.containsKey(actionName)) {
+            if (methods.containsKey(actionName)) {
                 logger.warning(String.format(
                     "Duplicate @Action(\"%s\") on %s.%s — skipped",
                     actionName, target.getClass().getSimpleName(), method.getName()));
@@ -170,8 +177,11 @@ public class ActionDispatcher {
             }
 
             method.setAccessible(true);
-            actionMethods.put(actionName, method);
+            methods.put(actionName, method);
         }
+        found = Map.copyOf(methods);
+        actionMethods = found;
+        return found;
     }
 
     /**
@@ -183,9 +193,7 @@ public class ActionDispatcher {
      *         matching method was found (so the caller can fall through to other dispatch stages)
      */
     public ActionResult invoke(String actionName, String args) {
-        discover();
-
-        Method method = actionMethods.get(actionName);
+        Method method = discover().get(actionName);
         if (method == null) {
             return null;
         }
@@ -296,12 +304,10 @@ public class ActionDispatcher {
      * @return the action names, in name order
      */
     public java.util.SortedSet<String> actionNames() {
-        discover();
-        return new java.util.TreeSet<>(actionMethods.keySet());
+        return new java.util.TreeSet<>(discover().keySet());
     }
 
     public boolean has(String actionName) {
-        discover();
-        return actionMethods.containsKey(actionName);
+        return discover().containsKey(actionName);
     }
 }
