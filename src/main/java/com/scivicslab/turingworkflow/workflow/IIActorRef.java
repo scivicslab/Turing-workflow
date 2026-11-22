@@ -291,14 +291,15 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
             JSONObject json = new JSONObject(args);
             String path = json.getString("path");
             Object value = valueOf(json.get("value"));
-            com.fasterxml.jackson.databind.JsonNode at = json().select(path);
-            if (!at.isMissingNode() && !at.isNull() && !at.isArray()) {
-                return new ActionResult(false,
-                        "appendJson refused: '" + path + "' holds " + at.getNodeType()
-                                + ", not a list");
+            // The action runs on whatever thread calls it; JsonState.append reads the end of the
+            // list and writes past it under one hold of the state's lock, so two callers never
+            // write the same index.
+            int end;
+            try {
+                end = json().append(path, value);
+            } catch (IllegalStateException notAList) {
+                return new ActionResult(false, "appendJson refused: " + notAList.getMessage());
             }
-            int end = at.isArray() ? at.size() : 0;
-            putJson(path + "[" + end + "]", value);
             return new ActionResult(true, "Added to " + path + "[" + end + "]=" + value);
         } catch (Exception e) {
             return ActionResult.error(e, getName() + ".appendJson");
