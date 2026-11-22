@@ -279,7 +279,7 @@ steps:
     label: skip-on-failure
     note: "failure path: log and loop back"
     actions:
-      - actor: log
+      - actor: outputMultiplexer
         method: add
         arguments: {"source": "worker", "type": "stderr", "data": "Process failed, skipping."}
 ```
@@ -868,7 +868,7 @@ steps:
   - states: ["5", "3"]
     label: step1-failed-skip
     actions:
-      - actor: log
+      - actor: outputMultiplexer
         method: add
         arguments: {"source": "kana-kanji", "type": "stderr", "data": "Step 1 failed, skipping page"}
 
@@ -885,7 +885,7 @@ steps:
   - states: ["8", "3"]
     label: step2-failed-skip
     actions:
-      - actor: log
+      - actor: outputMultiplexer
         method: add
         arguments: {"source": "kana-kanji", "type": "stderr", "data": "Step 2 failed, skipping page"}
 
@@ -894,7 +894,7 @@ steps:
     actions:
       - actor: pairs
         method: closeOutput
-      - actor: log
+      - actor: outputMultiplexer
         method: add
         arguments: {"source": "kana-kanji", "type": "stderr", "data": "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
@@ -942,7 +942,7 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
-      - actor: log
+      - actor: outputMultiplexer
         method: add
         arguments: {"source": "workflow", "type": "stderr", "data": "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
@@ -1030,7 +1030,7 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
-      - actor: log
+      - actor: outputMultiplexer
         method: add
         arguments: {"source": "workflow", "type": "stderr", "data": "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```
@@ -1083,7 +1083,7 @@ steps:
   - states: ["!end", "end"]
     label: catch-all
     actions:
-      - actor: log
+      - actor: outputMultiplexer
         method: add
         arguments: {"source": "workflow", "type": "stderr", "data": "jexl: 'Workflow ended unexpectedly in state ' + currentState + '; last result: ' + result"}
 ```

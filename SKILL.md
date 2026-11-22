@@ -325,7 +325,7 @@ string or a list (`ActorsAsVariables_260914_oo01`).
 | Actor | 役割 |
 |-------|------|
 | `loader` | 外部JARの動的ロードとアクターの生成・削除 |
-| `log` | 構造化ログエントリの蓄積 |
+| `outputMultiplexer` | 出力の集約（`add` した項目を標準出力などの宛先へ配る）。ノード・レポートの出力もここへ届く |
 | `vars` | キーバリューの変数ストア（`-P`で事前投入） |
 | `interpreter` / `this` | ワークフローエンジン自己参照・JSON状態管理・サブワークフロー呼び出し |
 | `parallel-map` | サブワークフローの並列展開 |
