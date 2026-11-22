@@ -1,0 +1,6 @@
+name: pool-action-top
+steps:
+  - states: ["0", "end"]
+    actions:
+      - actor: counter
+        method: increment

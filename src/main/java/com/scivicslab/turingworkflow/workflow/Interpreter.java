@@ -39,6 +39,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import com.scivicslab.pojoactor.action.ActionResult;
+import com.scivicslab.pojoactor.core.ManagedThreadPool;
 import com.scivicslab.turingworkflow.workflow.kustomize.WorkflowKustomizer;
 
 import org.yaml.snakeyaml.Yaml;
@@ -243,7 +244,15 @@ public class Interpreter {
                     executionMode = ExecutionMode.POOL;  // Default to POOL
                 }
 
-                if (executionMode == ExecutionMode.POOL && system != null) {
+                if (executionMode == ExecutionMode.POOL && system != null
+                        && system.getManagedThreadPool() instanceof ManagedThreadPool pool
+                        && pool.ownsCurrentThread()) {
+                    // POOL, already on one of the pool's real threads: run here. This happens in a
+                    // sub-workflow, which this.call runs on the real thread of the calling action;
+                    // handing the action to the pool and waiting would deadlock once every real
+                    // thread of the pool waits the same way (with one real thread, at once).
+                    result = actorAR.callByActionName(action, argumentString);
+                } else if (executionMode == ExecutionMode.POOL && system != null) {
                     // POOL: Execute on managed thread pool (safe for heavy operations)
                     try {
                         result = CompletableFuture.supplyAsync(
