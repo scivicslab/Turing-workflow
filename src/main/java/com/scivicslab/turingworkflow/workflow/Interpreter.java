@@ -623,11 +623,9 @@ public class Interpreter {
         MatrixCode mc = new MatrixCode();
         mc.setName((String) data.get("name"));
 
-        // Support both "steps" and "transitions" keys for backward compatibility
+        // The transitions: key was removed in 5.0.0: refuse it rather than load an empty workflow.
+        Removal.refuseTransitionsKey(data);
         List<Map<String, Object>> stepsData = (List<Map<String, Object>>) data.get("steps");
-        if (stepsData == null) {
-            stepsData = (List<Map<String, Object>>) data.get("transitions");
-        }
         if (stepsData != null) {
             List<Transition> vertices = new ArrayList<>();
             for (Map<String, Object> stepData : stepsData) {

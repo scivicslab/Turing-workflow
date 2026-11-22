@@ -17,6 +17,7 @@
 
 package com.scivicslab.turingworkflow.workflow.kustomize;
 
+import com.scivicslab.turingworkflow.workflow.Removal;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
@@ -316,7 +317,10 @@ public class WorkflowKustomizer {
     @SuppressWarnings("unchecked")
     private Map<String, Object> loadYamlFile(Path path) throws IOException {
         try (InputStream is = Files.newInputStream(path)) {
-            return yaml.load(is);
+            Map<String, Object> content = yaml.load(is);
+            // The transitions: key was removed in 5.0.0, in a base workflow and in a patch alike.
+            Removal.refuseTransitionsKey(content);
+            return content;
         }
     }
 
@@ -342,9 +346,9 @@ public class WorkflowKustomizer {
         // Find the target workflow
         Map<String, Object> targetWorkflow = findTargetWorkflow(workflows, patchWorkflowName, patchFile);
 
-        // Get steps from both (support both "steps" and "transitions" keys)
-        List<Map<String, Object>> baseSteps = getStepsOrTransitions(targetWorkflow);
-        List<Map<String, Object>> patchSteps = getStepsOrTransitions(patch);
+        // Get steps from both
+        List<Map<String, Object>> baseSteps = getSteps(targetWorkflow);
+        List<Map<String, Object>> patchSteps = getSteps(patch);
 
         if (patchSteps == null || patchSteps.isEmpty()) {
             return;
@@ -384,9 +388,9 @@ public class WorkflowKustomizer {
                 "Target workflow file not found: " + targetFile + " (patch: " + patchFile + ")");
         }
 
-        // Get steps from both (support both "steps" and "transitions" keys)
-        List<Map<String, Object>> baseSteps = getStepsOrTransitions(targetWorkflow);
-        List<Map<String, Object>> patchSteps = getStepsOrTransitions(patch);
+        // Get steps from both
+        List<Map<String, Object>> baseSteps = getSteps(targetWorkflow);
+        List<Map<String, Object>> patchSteps = getSteps(patch);
 
         if (patchSteps == null || patchSteps.isEmpty()) {
             return;
@@ -426,19 +430,15 @@ public class WorkflowKustomizer {
     }
 
     /**
-     * Gets the steps/transitions list from a workflow map.
-     * Supports both "steps" and "transitions" keys for backward compatibility.
+     * Gets the steps list from a workflow map. A file with the removed {@code transitions:} key is
+     * refused when it is loaded ({@link #loadYamlFile}), so only {@code steps:} is read here.
      *
      * @param workflow the workflow map
-     * @return the list of steps/transitions, or null if not found
+     * @return the list of steps, or null if not found
      */
     @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> getStepsOrTransitions(Map<String, Object> workflow) {
-        List<Map<String, Object>> steps = (List<Map<String, Object>>) workflow.get("steps");
-        if (steps == null) {
-            steps = (List<Map<String, Object>>) workflow.get("transitions");
-        }
-        return steps;
+    private List<Map<String, Object>> getSteps(Map<String, Object> workflow) {
+        return (List<Map<String, Object>>) workflow.get("steps");
     }
 
     /**
@@ -715,7 +715,7 @@ public class WorkflowKustomizer {
     private void updateWorkflowReferences(Map<String, Object> workflow,
                                           Map<String, String> nameMapping,
                                           String prefix, String suffix) {
-        List<Map<String, Object>> steps = getStepsOrTransitions(workflow);
+        List<Map<String, Object>> steps = getSteps(workflow);
         if (steps == null) return;
 
         for (Map<String, Object> step : steps) {

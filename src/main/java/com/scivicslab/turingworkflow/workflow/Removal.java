@@ -36,6 +36,25 @@ public final class Removal {
     }
 
     /**
+     * Why a workflow whose top level has {@code transitions:} is refused when it is loaded. The key
+     * was accepted in place of {@code steps:} until 4.x.
+     */
+    public static final String TRANSITIONS_KEY = reason("the top-level key `transitions:`", "rename it to `steps:`");
+
+    /**
+     * Refuses a workflow, as it was read from YAML, whose top level still has the removed
+     * {@code transitions:} key, also when it has {@code steps:} as well.
+     *
+     * @param workflow the workflow's top-level map; {@code null} is let through
+     * @throws IllegalArgumentException with {@link #TRANSITIONS_KEY} when the key is there
+     */
+    public static void refuseTransitionsKey(java.util.Map<String, Object> workflow) {
+        if (workflow != null && workflow.containsKey("transitions")) {
+            throw new IllegalArgumentException(TRANSITIONS_KEY);
+        }
+    }
+
+    /**
      * Returns the reason, without the {@code error:} prefix or the place.
      *
      * @param what    what was removed, for example {@code "the built-in actor 'calc:i'"}
