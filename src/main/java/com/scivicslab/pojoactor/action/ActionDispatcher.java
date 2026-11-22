@@ -96,9 +96,9 @@ public class ActionDispatcher {
     private final ActionSchemaRegistry schemaRegistry;
     /**
      * The {@code @Action} methods by action name, built on the first call and published only once
-     * it is complete. The first calls on a fresh actor can come from several threads at once (the
-     * ManagedThreadPool real threads of POOL actions, other callers), so a thread must never see a
-     * map that another thread is still filling.
+     * it is complete. The first calls on a fresh actor can come from several threads at once
+     * ({@code tellNow} and {@code askNow} run beside the mailbox by design), so a thread must
+     * never see a map that another thread is still filling.
      */
     private volatile Map<String, Method> actionMethods;
 

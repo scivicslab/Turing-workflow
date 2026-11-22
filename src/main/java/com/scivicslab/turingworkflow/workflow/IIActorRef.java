@@ -291,9 +291,10 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
             JSONObject json = new JSONObject(args);
             String path = json.getString("path");
             Object value = valueOf(json.get("value"));
-            // The action runs on whatever thread calls it; JsonState.append reads the end of the
-            // list and writes past it under one hold of the state's lock, so two callers never
-            // write the same index.
+            // A workflow calls this on its own actor while the workflow's message holds that
+            // actor's mailbox, so it cannot be queued there; the state is guarded instead.
+            // JsonState.append reads the end of the list and writes past it under one hold of
+            // the state's lock, so a writer beside the mailbox never takes the same index.
             int end;
             try {
                 end = json().append(path, value);

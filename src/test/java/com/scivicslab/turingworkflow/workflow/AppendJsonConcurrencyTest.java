@@ -31,9 +31,10 @@ import org.junit.jupiter.api.Timeout;
 import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
- * Stress test: the built-in putJson and appendJson actions run on whatever thread calls them, so
- * two threads calling them on one actor at once must lose nothing. appendJson read the end of the
- * list and wrote past it in two steps, and two callers wrote the same index.
+ * Stress test: the built-in putJson and appendJson actions cannot be queued in the mailbox (a
+ * workflow calls them on its own actor while its message holds that mailbox), so two writers at
+ * once, such as one beside the mailbox through askNow, must lose nothing. appendJson read the end
+ * of the list and wrote past it in two steps, and two writers took the same index.
  */
 @Tag("JsonState_Threads_260510_oo01")
 @DisplayName("IIActorRef — appendJson and putJson from two threads at once lose nothing")
