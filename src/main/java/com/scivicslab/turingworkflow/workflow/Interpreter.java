@@ -121,7 +121,7 @@ public class Interpreter {
         Interpreter previous = DISPATCHING.get();
         DISPATCHING.set(this);
         try {
-            return actor.callByActionName(actionName, args);
+            return IIActorRef.callAsStep(selfActorRef, actor, actionName, args);
         } finally {
             if (previous == null) {
                 DISPATCHING.remove();
@@ -333,7 +333,7 @@ public class Interpreter {
                     if (executionMode == ExecutionMode.MAILBOX && canWaitForOwnMailbox()) {
                         // MAILBOX: the action runs on this interpreter's mailbox virtual thread, and
                         // this thread, which is not one of the pool's real threads, waits for it.
-                        result = selfActorRef.ask(unused -> actorAR.callByActionName(action, argumentString)).get();
+                        result = selfActorRef.ask(unused -> IIActorRef.callAsStep(selfActorRef, actorAR, action, argumentString)).get();
                     } else if (executionMode == ExecutionMode.POOL && system != null
                             && system.getManagedThreadPool() instanceof ManagedThreadPool pool
                             && pool.ownsCurrentThread()) {
