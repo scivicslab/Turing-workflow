@@ -87,29 +87,29 @@
       <dependency>
         <groupId>com.fasterxml.jackson.dataformat</groupId>
         <artifactId>jackson-dataformat-yaml</artifactId>
-        <version>2.20.0</version>
+        <version>2.21.7</version>
       </dependency>
 
-      <!-- json-schema-validator drags in jackson-core 2.17.2, which databind 2.20 cannot run
+      <!-- json-schema-validator drags in jackson-core 2.17.2, which databind 2.21 cannot run
            against: ParserMinimalBase lost a constructor between them. Declared here so Maven's
            nearest-definition rule picks the matching version. -->
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-core</artifactId>
-        <version>2.20.0</version>
+        <version>2.21.7</version>
       </dependency>
 
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-databind</artifactId>
-        <version>2.20.0</version>
+        <version>2.21.7</version>
       </dependency>
 
       <!-- JSON processing -->
       <dependency>
         <groupId>org.json</groupId>
         <artifactId>json</artifactId>
-        <version>20240303</version>
+        <version>20260719</version>
       </dependency>
 
       <!-- Expression language -->
