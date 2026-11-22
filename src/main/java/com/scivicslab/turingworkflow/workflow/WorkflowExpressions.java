@@ -17,19 +17,32 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+
 import org.apache.commons.jexl3.JexlBuilder;
 import org.apache.commons.jexl3.JexlContext;
 import org.apache.commons.jexl3.JexlEngine;
+import org.apache.commons.jexl3.JexlFeatures;
 import org.apache.commons.jexl3.MapContext;
 import org.apache.commons.jexl3.introspection.JexlPermissions;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.scivicslab.pojoactor.core.JsonState;
 
 
 /**
  * Evaluates an expression with the actors of one {@link IIActorSystem} in reach.
  *
- * <p>An expression reaches an actor through {@code actors.get(name)}, which answers the object the
- * actor wraps. The object's own methods are then called, so the outcome keeps its type:
- * {@code actors.get("counter").getCount()} is an {@code int}, not the text {@code "3"}.</p>
+ * <p>An expression reads values and keeps their type: {@code state.getInt("i", 0)} is an
+ * {@code int}, not the text {@code "3"}. What it may call is a fixed list, {@code ARGUMENT_METHODS}
+ * for an action's arguments and {@code STATE_METHODS} for the patterns in {@code states}; it cannot
+ * create an object, read or write a file, or call a method of an object an actor wraps.</p>
  *
  * <h2>Why a lookup rather than names in scope</h2>
  * Actor names carry characters an expression cannot use as an identifier — {@code node:web-1} has a
@@ -38,9 +51,9 @@ import org.apache.commons.jexl3.introspection.JexlPermissions;
  *
  * <h2>Examples</h2>
  * <pre>{@code
- * actors.get("counter").getCount()          // a number that actor's object holds
- * actors.get("counter").getCount() + 1       // arithmetic on it, still a number
- * "processed: " + actors.get("node").host()  // text built from what an object answers
+ * state.getInt("i", 0) + 1                  // arithmetic on a stored number, still a number
+ * "processed: " + state.getString("item")    // text built from a stored value
+ * actors.has("node:web-1")                   // whether an actor of that name exists
  * result                                     // what the previous action answered
  * state.get("dir")                           // a value this actor stored
  * state.getInt("chunk.size", 0)              // the same, read as a whole number
@@ -55,28 +68,49 @@ import org.apache.commons.jexl3.introspection.JexlPermissions;
 public final class WorkflowExpressions {
 
     /**
-     * Packages whose classes an expression may call methods on.
+     * The methods an action's argument expression may call, by the type of the value it calls them on.
      *
-     * <p>JEXL 3.3 refuses reflection outside a permitted set, and its default set does not include
-     * application classes: without this, {@code actors.get("counter").getCount()} answers {@code null}
-     * and nothing says why. Composing onto {@code RESTRICTED} rather than using
-     * {@code UNRESTRICTED} keeps JEXL's own refusals in place — {@code java.lang.System} stays out
-     * of reach.</p>
+     * <p>An expression is text in a workflow YAML, and whoever writes the YAML is not trusted with the
+     * JVM. Permission used to go by package — {@code RESTRICTED} plus this library, POJO-actor and
+     * Jackson's databind — and that reached far more than a workflow reads: {@code java.io}'s streams
+     * read and wrote files, {@code FileAccumulator} and {@code ObjectMapper} wrote them too, and a
+     * {@code DynamicActorLoaderActor} built inside the expression loaded a jar and ran it
+     * ({@code ExpressionReach_261122_oo01}). So the set is built from nothing, and holds what the
+     * expressions in the workflows written so far call — {@code state}'s readers, the Jackson node a
+     * list arrives as, and text — and nothing that writes.</p>
      *
-     * <p>Jackson's databind is in the set because it is what {@code state} is made of:
-     * {@code state.select("items")} answers a {@code JsonNode}, and with that class refused every
-     * call on the answer came back {@code null} — or worse, {@code size()} answered {@code 1},
-     * JEXL's size of one opaque object, so a loop over a three-item list ran once. Reading a list
-     * out of the workflow's own state is the ordinary thing to do with it
-     * ({@code ActorsAsVariables_260914_oo01}), so the type that list arrives as has to be
-     * callable.</p>
+     * <p>A type stands for its subclasses: {@code state.select(...)} answers an {@code ArrayNode} or an
+     * {@code ObjectNode}, never a {@code JsonNode} itself. The names exclude every method of those
+     * subclasses that changes a node ({@code put}, {@code set}, {@code add}, {@code remove}).</p>
      */
-    private static final String[] PERMITTED_PACKAGES = {
-        "com.scivicslab.turingworkflow.workflow.*",
-        "com.scivicslab.pojoactor.*",
-        "com.fasterxml.jackson.databind.*",
-        "com.fasterxml.jackson.databind.node.*",
-    };
+    private static final Map<Class<?>, Set<String>> ARGUMENT_METHODS = methods(
+            Lookup.class, Set.of("get", "has"),
+            JsonState.class, Set.of("select", "getString", "getInt", "getLong", "getDouble",
+                    "getBoolean", "get", "has"),
+            JsonNode.class, Set.of("size", "get", "asText", "isArray", "toString"),
+            String.class, Set.of("length", "indexOf", "lastIndexOf", "substring", "trim",
+                    "startsWith", "endsWith", "contains", "matches", "replaceAll", "toString"));
+
+    /**
+     * The methods a from-state or to-state pattern may call.
+     *
+     * <p>A pattern reads two values, {@code currentState} (text) and {@code n} (the state as a number,
+     * or {@code null}). Comparison, arithmetic and {@code =~} are JEXL's own operators and call no
+     * method; what remains is three tests on the text.</p>
+     */
+    private static final Map<Class<?>, Set<String>> STATE_METHODS = methods(
+            String.class, Set.of("startsWith", "endsWith", "contains"));
+
+    /**
+     * What an expression may be written with: values, operators and method calls, nothing else.
+     *
+     * <p>Built from {@link JexlFeatures#createNone()} rather than by switching features off, for the
+     * same reason the permissions are: a feature JEXL adds later stays off. {@code new} is the one that
+     * mattered — every escape in {@code ExpressionReach_261122_oo01} begins with it — and assignment,
+     * loops, lambdas, pragmas, annotations, namespaces and literal lists and maps are off with it; no
+     * workflow uses them.</p>
+     */
+    private static final JexlFeatures FEATURES = JexlFeatures.createNone().methodCall(true);
 
     /**
      * The evaluator for an action's argument expressions.
@@ -86,14 +120,130 @@ public final class WorkflowExpressions {
      * argument then reaches the action as JSON null and the action runs on it — a workflow calling
      * {@code inc()} where the object has {@code increment()} printed "null" and reported success,
      * with nothing in the log. Raising is caught where the argument is built, which logs the
-     * expression and passes null, so the same run now says which expression went wrong.</p>
+     * expression and passes null, so the same run now says which expression went wrong. A method
+     * outside {@code ARGUMENT_METHODS} raises the same way.</p>
      */
-    private static final JexlEngine JEXL = new JexlBuilder()
-            .silent(false)
-            .strict(true)
-            .safe(false)
-            .permissions(JexlPermissions.RESTRICTED.compose(PERMITTED_PACKAGES))
-            .create();
+    private static final JexlEngine JEXL = engine(ARGUMENT_METHODS);
+
+    /**
+     * The evaluator for from-state and to-state patterns, reaching only {@code STATE_METHODS}.
+     *
+     * <p>Strict, so that a name the pattern does not have raises rather than reading as
+     * {@code null}. Read as null, {@code jexl:state != 'end'} — a workflow written when the state
+     * string was called {@code state} — is true in every state, and the transition that was meant
+     * to be a catch-all fires immediately. Raising is caught by the caller, which logs the
+     * expression and matches nothing, so the mistake stops the run instead of redirecting it.
+     * {@code safe(false)} for the same reason one step further in: without it, a method the value
+     * does not have answers {@code null} rather than raising, and a pattern built on it quietly
+     * matches nothing.</p>
+     */
+    private static final JexlEngine STATES = engine(STATE_METHODS);
+
+    private static JexlEngine engine(Map<Class<?>, Set<String>> methods) {
+        return new JexlBuilder()
+                .silent(false)
+                .strict(true)
+                .safe(false)
+                .features(FEATURES)
+                .permissions(new AllowList(methods))
+                .create();
+    }
+
+    /**
+     * @return the evaluator {@link Interpreter} uses for the expressions in {@code states}
+     */
+    static JexlEngine statesEngine() {
+        return STATES;
+    }
+
+    private static Map<Class<?>, Set<String>> methods(Object... typeThenNames) {
+        Map<Class<?>, Set<String>> methods = new LinkedHashMap<>();
+        for (int i = 0; i < typeThenNames.length; i += 2) {
+            @SuppressWarnings("unchecked")
+            Set<String> names = (Set<String>) typeThenNames[i + 1];
+            methods.put((Class<?>) typeThenNames[i], names);
+        }
+        return Map.copyOf(methods);
+    }
+
+    /**
+     * JEXL permissions that allow a public instance method when its name is listed for a type the
+     * receiver is, and nothing else: no constructor, no field, no static method, no class that is
+     * not one of the types or a subclass of one.
+     *
+     * <p>Written here rather than parsed from JEXL's permission syntax so that it starts from
+     * nothing: the syntax adds to a base set such as {@code RESTRICTED}, which is a deny list over
+     * whole packages, and what it lets through changes with each JEXL release.</p>
+     */
+    private static final class AllowList implements JexlPermissions {
+
+        private final Map<Class<?>, Set<String>> methods;
+
+        AllowList(Map<Class<?>, Set<String>> methods) {
+            this.methods = methods;
+        }
+
+        private boolean listed(Class<?> receiver, String name) {
+            for (Map.Entry<Class<?>, Set<String>> entry : methods.entrySet()) {
+                if (entry.getKey().isAssignableFrom(receiver) && (name == null || entry.getValue().contains(name))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public boolean allow(Class<?> clazz) {
+            return clazz != null && listed(clazz, null);
+        }
+
+        @Override
+        public boolean allow(Class<?> clazz, Method method) {
+            return clazz != null && method != null
+                    && Modifier.isPublic(method.getModifiers())
+                    && !Modifier.isStatic(method.getModifiers())
+                    && listed(clazz, method.getName());
+        }
+
+        @Override
+        public boolean allow(Method method) {
+            return method != null && allow(method.getDeclaringClass(), method);
+        }
+
+        @Override
+        public boolean allow(Constructor<?> constructor) {
+            return false;
+        }
+
+        @Override
+        public boolean allow(Field field) {
+            return false;
+        }
+
+        @Override
+        public boolean allow(Class<?> clazz, Field field) {
+            return false;
+        }
+
+        @Override
+        public boolean allow(Package pack) {
+            if (pack == null) {
+                return false;
+            }
+            for (Class<?> type : methods.keySet()) {
+                if (pack.equals(type.getPackage())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** Refused: the set is the list above, and nothing is added to it by text. */
+        @Override
+        public JexlPermissions compose(String... src) {
+            throw new UnsupportedOperationException("the expression allow-list is not extended by text");
+        }
+    }
 
     /** The name an expression uses to reach the actor lookup. */
     public static final String LOOKUP_NAME = "actors";

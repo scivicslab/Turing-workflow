@@ -44,7 +44,6 @@ import com.scivicslab.turingworkflow.workflow.kustomize.WorkflowKustomizer;
 
 import org.yaml.snakeyaml.Yaml;
 
-import org.apache.commons.jexl3.JexlBuilder;
 import org.apache.commons.jexl3.JexlContext;
 import org.apache.commons.jexl3.JexlEngine;
 import org.apache.commons.jexl3.JexlExpression;
@@ -1047,34 +1046,12 @@ public class Interpreter {
         return pattern.equals(state);
     }
 
-    /** JEXL engine for expression evaluation (lazy initialized) */
-    private static JexlEngine jexlEngine;
-
     /**
-     * Gets the JEXL engine instance (lazy initialization).
+     * The evaluator for the expressions in {@code states}: {@link WorkflowExpressions#statesEngine()},
+     * which says what a pattern may reach and why it raises rather than answering nothing.
      */
-    /**
-     * The evaluator for the expressions in {@code states}.
-     *
-     * <p>Strict, so that a name the pattern does not have raises rather than reading as
-     * {@code null}. Read as null, {@code jexl:state != 'end'} — a workflow written when the state
-     * string was called {@code state} — is true in every state, and the transition that was meant
-     * to be a catch-all fires immediately. Raising is caught by the caller, which logs the
-     * expression and matches nothing, so the mistake stops the run instead of redirecting it.</p>
-     *
-     * <p>{@code safe(false)} for the same reason one step further in: without it, a method the
-     * value does not have answers {@code null} rather than raising, and a pattern built on it
-     * quietly matches nothing.</p>
-     */
-    private static synchronized JexlEngine getJexlEngine() {
-        if (jexlEngine == null) {
-            jexlEngine = new JexlBuilder()
-                    .silent(false)
-                    .strict(true)
-                    .safe(false)
-                    .create();
-        }
-        return jexlEngine;
+    private static JexlEngine getJexlEngine() {
+        return WorkflowExpressions.statesEngine();
     }
 
     /**

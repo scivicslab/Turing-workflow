@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Test;
 
 import com.scivicslab.pojoactor.action.Action;
 import com.scivicslab.pojoactor.action.ActionResult;
+import com.scivicslab.pojoactor.core.JsonState;
 
 /**
  * Verifies that an {@code Error} thrown by an action follows the same rule as an exception: the
@@ -310,20 +311,6 @@ class ActionErrorTest {
 
     // ---- an argument expression ------------------------------------------------------------------
 
-    /** The object a {@code bomb} actor wraps: its method throws an AssertionError. */
-    public static final class Bomb {
-        public String explode() {
-            throw new AssertionError("from the expression");
-        }
-    }
-
-    /** The object a {@code fatalBomb} actor wraps: its method throws a fatal error. */
-    public static final class FatalBomb {
-        public String explode() {
-            throw new TestFatalError("from the expression");
-        }
-    }
-
     private static final String EXPRESSION_WORKFLOW = """
             name: argument-expression-error
             steps:
@@ -331,7 +318,7 @@ class ActionErrorTest {
                 actions:
                   - actor: recorder
                     method: record
-                    arguments: ["jexl: actors.get('%s').explode()"]
+                    arguments: ["jexl: state.getString('bomb')"]
               - states: ["0", "end"]
                 actions:
                   - actor: recorder
@@ -339,21 +326,38 @@ class ActionErrorTest {
                     arguments: ["jexl: result"]
             """;
 
-    private void wrapping(String name, Object object) {
-        system.addIIActor(new IIActorRef<Object>(name, object, system) {
+    /**
+     * Makes the interpreter run as an actor whose state throws {@code failure} when {@code bomb} is
+     * read. An expression may call only the readers of values, so the Error has to come from one of
+     * them; a method of an object an actor wraps is out of an expression's reach.
+     */
+    private void runAsActorWhoseStateThrows(Supplier<Throwable> failure) {
+        JsonState state = new JsonState() {
             @Override
-            public ActionResult callByActionName(String actionName, String args) {
-                return new ActionResult(true, "unused");
+            public String getString(String path) {
+                if ("bomb".equals(path)) {
+                    throw ActionFailureReasonTest.sneaky(failure.get());
+                }
+                return super.getString(path);
             }
-        });
+        };
+        interpreterActor.close();
+        interpreterActor = new InterpreterIIAR("main", interpreter, system) {
+            @Override
+            public JsonState json() {
+                return state;
+            }
+        };
+        interpreter.setSelfActorRef(interpreterActor);
+        system.addIIActor(interpreterActor);
     }
 
     @Test
     @DisplayName("An AssertionError from an argument expression fails the action, and the run goes on")
     void argumentExpressionError() throws Exception {
-        wrapping("bomb", new Bomb());
+        runAsActorWhoseStateThrows(() -> new AssertionError("from the expression"));
 
-        ActionResult result = runText(EXPRESSION_WORKFLOW.formatted("bomb"));
+        ActionResult result = runText(EXPRESSION_WORKFLOW);
 
         assertTrue(result.isSuccess(), result.getResult());
         assertRecordedReason("argument expression failed: ");
@@ -362,10 +366,10 @@ class ActionErrorTest {
     @Test
     @DisplayName("A fatal error from an argument expression is recorded as the last result, then rethrown")
     void argumentExpressionFatal() {
-        wrapping("fatalBomb", new FatalBomb());
+        runAsActorWhoseStateThrows(() -> new TestFatalError("from the expression"));
 
         interpreter.readYaml(new ByteArrayInputStream(
-                EXPRESSION_WORKFLOW.formatted("fatalBomb").getBytes(StandardCharsets.UTF_8)));
+                EXPRESSION_WORKFLOW.getBytes(StandardCharsets.UTF_8)));
         ExecutionException e = assertThrows(ExecutionException.class,
                 () -> CompletableFuture.supplyAsync(() -> interpreter.runUntilEnd(20))
                         .get(10, TimeUnit.SECONDS));
