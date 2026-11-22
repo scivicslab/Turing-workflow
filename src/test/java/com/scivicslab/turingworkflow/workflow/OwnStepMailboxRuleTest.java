@@ -43,7 +43,7 @@ import org.junit.jupiter.api.TestFactory;
 import com.scivicslab.pojoactor.action.ActionResult;
 
 /**
- * What the own-step rule leaves as it was ({@code OwnStepDispatch_261123_oo01}): an action that
+ * What the own-step rule leaves as it was: an action that
  * another actor sends, or a workflow's step that names another actor, goes through the target's
  * mailbox, and the target's mailbox does not take it until the message it runs has ended.
  *

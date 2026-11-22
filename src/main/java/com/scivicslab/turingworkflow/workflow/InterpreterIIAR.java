@@ -42,6 +42,28 @@ import com.scivicslab.pojoactor.action.ActionResult;
  * <p>A bare string under {@code arguments:} reaches an action as a JSON array of one element;
  * the actions that take one value therefore accept both the bare text and the array.</p>
  *
+ * <h2>Own steps and steps from other actors</h2>
+ *
+ * <p>A step whose target resolves to the actor that runs the workflow is that actor's own step.
+ * The target is written {@code this}, {@code .}, the actor's own name, {@code ../<own name>},
+ * {@code ../*} or a {@code ../} pattern that matches the actor's name. {@code Interpreter.action()}
+ * marks the call ({@link IIActorRef#callAsStep}), and the actions that work on the interpreter
+ * ({@code setCurrentState}, {@code readYaml}, {@code execCode}, {@code runUntilEnd}, {@code call},
+ * {@code runWorkflow}, {@code apply}) then do that work directly on the thread that runs the step: a
+ * real thread of the ManagedThreadPool, or the actor's mailbox virtual thread when the workflow is
+ * the actor's own message. They do not send themselves to the actor's mailbox and wait there. The
+ * workflow runs inside one message, and the mailbox's virtual thread takes the next message only when
+ * that message has ended, so a message that waits for the next one never ends and the actor hangs.</p>
+ *
+ * <p>An action that another actor calls, such as a parent's {@code actor: child, method: runUntilEnd},
+ * is not an own step and goes through the actor's mailbox, which does not start it before the message
+ * it is running has ended. A sub-workflow's step that names its parent is such a call too, even though
+ * it runs inside the parent's own step.</p>
+ *
+ * <p>The tests that pin this are {@code OwnStepDispatchTest}, {@code OwnStepMatrixTest} (every action,
+ * every way to name the actor, every way to start a workflow) and {@code OwnStepMailboxRuleTest}. Moving an
+ * action back to "send to this actor and wait" turns them red.</p>
+ *
  * @author devteam@scivicslab.com
  */
 public class InterpreterIIAR extends IIActorRef<Interpreter> {
@@ -84,6 +106,9 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *   method: execCode
      * }</pre>
      *
+      * <p>Called by this actor's own workflow ({@code actor: this} and the other ways to name the actor) it
+     * does this directly; called by another actor it goes through this actor's mailbox.</p>
+     *
      * @param args ignored
      */
     @Action("execCode")
@@ -104,6 +129,9 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *   method: runUntilEnd
      *   arguments: [50]
      * }</pre>
+     *
+      * <p>Called by this actor's own workflow ({@code actor: this} and the other ways to name the actor) it
+     * does this directly; called by another actor it goes through this actor's mailbox.</p>
      *
      * @param args a JSON array whose first element is {@code maxIterations}; empty for the default
      */
@@ -137,6 +165,9 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *   arguments: ["sub-workflow.yaml"]
      * }</pre>
      *
+      * <p>Called by this actor's own workflow ({@code actor: this} and the other ways to name the actor) it
+     * does this directly; called by another actor it goes through this actor's mailbox.</p>
+     *
      * @param args a JSON array whose first element is the workflow file
      */
     @Action("call")
@@ -160,6 +191,9 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *     method: runWorkflow
      *     arguments: ["task.yaml"]
      * }</pre>
+     *
+      * <p>Called by this actor's own workflow ({@code actor: this} and the other ways to name the actor) it
+     * does this directly; called by another actor it goes through this actor's mailbox.</p>
      *
      * @param args a JSON array: the workflow file, then optionally {@code maxIterations}
      */
@@ -187,6 +221,9 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *     arguments: [0.05, 0.02, 0.5]
      * }</pre>
      *
+      * <p>Called by this actor's own workflow ({@code actor: this} and the other ways to name the actor) it
+     * does this directly; called by another actor it goes through this actor's mailbox.</p>
+     *
      * @param args {@code {"actor": "<pattern>", "method": "<action>", "arguments": <any>}}
      */
     @Action("apply")
@@ -202,6 +239,9 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *   method: readYaml
      *   arguments: "sub-workflow.yaml"
      * }</pre>
+     *
+      * <p>Called by this actor's own workflow ({@code actor: this} and the other ways to name the actor) it
+     * does this directly; called by another actor it goes through this actor's mailbox.</p>
      *
      * @param args the file path, as a bare string or as the first element of a JSON array
      */
@@ -303,6 +343,9 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      *   method: setCurrentState
      *   arguments: "retry"
      * }</pre>
+     *
+      * <p>Called by this actor's own workflow ({@code actor: this} and the other ways to name the actor) it
+     * does this directly; called by another actor it goes through this actor's mailbox.</p>
      *
      * @param args the state name, as a bare string or as the first element of a JSON array
      */
