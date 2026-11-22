@@ -130,9 +130,10 @@ public class WorkflowScheduler implements CallableByActionName, AutoCloseable {
      * <p><strong>Fixed Rate vs Fixed Delay:</strong></p>
      * <p>With {@code scheduleAtFixedRate}, executions are scheduled to start at
      * regular intervals (0, period, 2*period, 3*period, ...) regardless of how
-     * long each execution takes. If an execution takes longer than the period,
-     * the next execution starts immediately after the previous one completes
-     * (no delay accumulation).</p>
+     * long each execution takes. A tick only hands the action to the actor and does
+     * not wait for it; a tick that comes while the previous execution of the same
+     * task has not finished is skipped and logged as a WARNING naming the task, so
+     * executions of one task never pile up in the actor's mailbox.</p>
      *
      * <p>Use this method when you need consistent timing intervals, such as
      * metrics collection or heartbeat checks at precise intervals.</p>
