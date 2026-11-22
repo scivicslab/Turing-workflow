@@ -1684,7 +1684,7 @@ public class Interpreter {
             final String finalArgs = args;
 
             for (IIActorRef<?> actor : matchedActors) {
-                CompletableFuture<Void> future = actor.<Void>ask(unused -> {
+                futures.add(actor.<Void>ask(unused -> {
                     try {
                         ActionResult result = actor.callByActionName(methodName, finalArgs);
                         if (!result.isSuccess()) {
@@ -1698,29 +1698,33 @@ public class Interpreter {
                         }
                     } catch (Throwable t) {
                         // An Error is this child's failure like an exception. A fatal one is noted
-                        // too, and then rethrown: it fails this future and goes on out of apply,
-                        // straight from ask on a pool real thread, from the join below otherwise.
+                        // too, and then rethrown: it fails this future, and the wait below rethrows it.
                         failures.put(actor.getName(), ActionResult.errorText(t, actor.getName() + "." + methodName));
                         logger.log(Level.WARNING, "Exception on " + actor.getName(), t);
                         ActionResult.rethrowIfFatal(t);
                     }
                     return null;
-                }, pool).exceptionally(t -> {
-                    // The child's work never ran: the child is closed, or the pool dropped the task
-                    // when the system terminated. That is this child's failure. A fatal error goes
-                    // on to the join below.
-                    ActionResult.rethrowIfFatal(t);
-                    failures.putIfAbsent(actor.getName(), ActionResult.errorText(t, actor.getName() + "." + methodName));
-                    return null;
-                });
-                futures.add(future);
+                }, pool));
             }
 
-            // Wait for all async tasks to complete. No time limit on purpose: each actor's
-            // action may legitimately run a long time, and every future here now always
-            // completes. Following TimeoutAndScheduler_251012_oo01, a caller that needs a limit
-            // puts it on its own wait.
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            // Wait for each child's future itself. No time limit on purpose: each actor's
+            // action may legitimately run a long time, and every future here always completes.
+            // Following TimeoutAndScheduler_251012_oo01, a caller that needs a limit puts it on its
+            // own wait. The future that ask returns lets a ManagedThreadPool real thread that waits
+            // on it run the queued work (a child's job included); allOf and exceptionally return
+            // futures that do not, and a pool real thread that waited on those, with one real thread
+            // in the pool, waited for a job that only it could run.
+            for (int i = 0; i < futures.size(); i++) {
+                try {
+                    futures.get(i).join();
+                } catch (RuntimeException e) {
+                    // The child's work never ran: the child is closed, or the pool dropped the task
+                    // when the system terminated. That is this child's failure. A fatal error goes on out.
+                    ActionResult.rethrowIfFatal(e);
+                    String name = matchedActors.get(i).getName();
+                    failures.putIfAbsent(name, ActionResult.errorText(e, name + "." + methodName));
+                }
+            }
 
             if (failures.isEmpty()) {
                 return new ActionResult(true,
