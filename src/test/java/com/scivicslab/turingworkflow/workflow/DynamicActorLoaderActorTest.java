@@ -104,17 +104,6 @@ public class DynamicActorLoaderActorTest {
     }
 
     @Test
-    @DisplayName("Should handle invalid arguments for loadFromJar")
-    public void testInvalidArgsLoadFromJar() {
-        ActionResult result = loader.callByActionName("loadFromJar", "invalid");
-
-        assertFalse(result.isSuccess(), "Should fail with invalid args");
-        assertTrue(result.getResult().contains("Invalid args") ||
-                   result.getResult().contains("Failed to load"),
-            "Should indicate error");
-    }
-
-    @Test
     @DisplayName("Should be usable in workflows")
     public void testWorkflowIntegration() throws Exception {
         // Create interpreter with loader actor
@@ -314,15 +303,6 @@ public class DynamicActorLoaderActorTest {
         public record ChildArgs(@NotNull String parent, @NotNull String actor, @NotNull String className) {}
 
         /**
-         * Which class in which JAR to register as a top-level actor.
-         *
-         * @param jar       the JAR's path
-         * @param className the fully qualified class name
-         * @param actor     the name the new actor is registered under
-         */
-        public record JarActorArgs(@NotNull String jar, @NotNull String className, @NotNull String actor) {}
-
-        /**
          * Which provider registers its actors.
          *
          * @param provider the provider's name
@@ -351,12 +331,6 @@ public class DynamicActorLoaderActorTest {
         @Action("listLoadedJars")
         public ActionResult listLoadedJars(String args) {
             return this.object.callByActionName("listLoadedJars", "");
-        }
-
-        @Action(value = "loadFromJar", argsType = JarActorArgs.class)
-        public ActionResult loadFromJar(JarActorArgs args) {
-            return this.object.callByActionName("loadFromJar",
-                    array(args.jar(), args.className(), args.actor()));
         }
 
         @Action(value = "createFromProvider", argsType = ProviderArgs.class)

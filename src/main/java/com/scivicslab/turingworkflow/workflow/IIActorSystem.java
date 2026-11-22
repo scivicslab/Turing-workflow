@@ -194,9 +194,9 @@ public class IIActorSystem extends ActorSystem {
         }
         for (String removed : REMOVED_VALUE_ACTORS) {
             if (name.equals(removed) || name.startsWith(removed + ":")) {
-                return "the built-in actor '" + name + "' was removed in 5.0.0; keep the value in the"
+                return Removal.reason("the built-in actor '" + name + "'", "keep the value in the"
                         + " workflow's own state instead: write it with this.putJson or this.appendJson,"
-                        + " read it with jexl: state...";
+                        + " read it with jexl: state...");
             }
         }
         return null;

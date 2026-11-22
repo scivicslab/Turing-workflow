@@ -238,9 +238,9 @@ public class Interpreter {
                 logger.warning("Actor not found: " + actorPath);
                 // A built-in value actor removed in 5.0.0 says so, and what to write instead.
                 String removed = IIActorSystem.removedValueActorReason(actorPath);
-                ActionResult notFoundResult = new ActionResult(false, removed != null
-                        ? "error: " + removed + " (in " + actorPath + "." + action + ")"
-                        : "Actor not found: " + actorPath);
+                ActionResult notFoundResult = removed != null
+                        ? Removal.failure(removed, actorPath + "." + action)
+                        : new ActionResult(false, "Actor not found: " + actorPath);
                 recordLastResult(notFoundResult);
                 logger.exiting(CLASS_NAME, "action", notFoundResult);
                 return notFoundResult;

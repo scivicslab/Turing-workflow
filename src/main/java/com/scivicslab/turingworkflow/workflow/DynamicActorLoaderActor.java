@@ -21,7 +21,6 @@ import com.scivicslab.pojoactor.action.ActionResult;
 import com.scivicslab.pojoactor.core.ActorProvider;
 import com.scivicslab.pojoactor.action.CallableByActionName;
 import com.scivicslab.pojoactor.core.ActorRef;
-import com.scivicslab.pojoactor.core.DynamicActorLoader;
 
 import org.json.JSONArray;
 
@@ -48,7 +47,6 @@ import java.util.logging.Logger;
  *   <li>loadJar: Load a JAR file and make its classes available</li>
  *   <li>createChild: Create an actor from a loaded class under a parent actor</li>
  *   <li>listLoadedJars: List all loaded JAR files</li>
- *   <li>loadFromJar: (Legacy) Load actor from external JAR file in one step</li>
  *   <li>createFromProvider: Create actor from ServiceLoader provider</li>
  *   <li>listProviders: List all available ActorProvider instances</li>
  *   <li>loadProvidersFromJar: Load ActorProvider plugins from JAR</li>
@@ -79,15 +77,8 @@ import java.util.logging.Logger;
  *         arguments: ["arg1", "arg2"]
  * }</pre>
  *
- * <p><strong>Example Workflow (Legacy one-step loading):</strong></p>
- * <pre>{@code
- * steps:
- *   - states: ["0", "1"]
- *     actions:
- *       - actor: loader
- *         method: loadFromJar
- *         arguments: ["plugins/my-actor.jar", "com.example.MyActor", "myactor"]
- * }</pre>
+ * <p>The one-step {@code loadFromJar} was removed in 5.0.0; calling it is false with
+ * a reason saying so. {@code loadJar} followed by {@code createChild} replaces it.</p>
  *
  * @author devteam@scivicslab.com
  * @since 2.6.0
@@ -102,7 +93,11 @@ public class DynamicActorLoaderActor implements CallableByActionName {
     /** Shared ClassLoader for all dynamically loaded JARs */
     private SharedClassLoader sharedClassLoader;
 
-    /** Map of JAR path to ClassLoader for loaded JARs (legacy, kept for compatibility) */
+    /** Why {@code loadFromJar} fails: it was removed in 5.0.0, and what replaces it. */
+    static final String LOAD_FROM_JAR_REMOVED = Removal.reason("the action 'loader.loadFromJar'",
+            "load the jar and create the actor in two steps instead: loader.loadJar, then loader.createChild");
+
+    /** Map of JAR path to ClassLoader for loaded JARs */
     private final Map<String, URLClassLoader> loadedJars = new LinkedHashMap<>();
 
     /**
@@ -148,7 +143,8 @@ public class DynamicActorLoaderActor implements CallableByActionName {
                     return listLoadedJars();
 
                 case "loadFromJar":
-                    return loadFromJar(args);
+                    // Removed in 5.0.0: nothing is loaded or created.
+                    return Removal.failure(LOAD_FROM_JAR_REMOVED, "loader.loadFromJar");
 
                 case "createFromProvider":
                     return createFromProvider(args);
@@ -483,106 +479,6 @@ public class DynamicActorLoaderActor implements CallableByActionName {
         }
         return new ActionResult(true,
             "Loaded JARs: " + String.join(", ", loadedJarPaths));
-    }
-
-    /**
-     * Loads an actor from an external JAR file (legacy one-step method).
-     *
-     * <p>Arguments format (YAML array, recommended):</p>
-     * <pre>{@code
-     * arguments: ["plugins/my-actor.jar", "com.example.MyActor", "myactor"]
-     * }</pre>
-     *
-     * <p>Legacy format (comma-separated string) is also supported for backward compatibility:</p>
-     * <pre>{@code
-     * arguments: "plugins/my-actor.jar,com.example.MyActor,myactor"
-     * }</pre>
-     *
-     * <p><strong>Note:</strong> This method registers the actor at the top level
-     * (no parent). For proper actor tree placement, use {@code loadJar} followed
-     * by {@code createChild}.</p>
-     *
-     * @param args JSON array or comma-separated string: [jarPath, className, actorName]
-     * @return ActionResult indicating success or failure
-     */
-    private ActionResult loadFromJar(String args) {
-        try {
-            String jarPath;
-            String className;
-            String actorName;
-
-            // Try to parse as JSON array first
-            if (args.trim().startsWith("[")) {
-                JSONArray jsonArray = new JSONArray(args);
-                if (jsonArray.length() < 3) {
-                    return new ActionResult(false,
-                        "Invalid args. Expected array: [jarPath, className, actorName]");
-                }
-                jarPath = jsonArray.getString(0).trim();
-                className = jsonArray.getString(1).trim();
-                actorName = jsonArray.getString(2).trim();
-            } else {
-                // Fall back to legacy comma-separated format
-                String[] parts = args.split(",", 3);
-                if (parts.length < 3) {
-                    return new ActionResult(false,
-                        "Invalid args. Expected: jarPath,className,actorName");
-                }
-                jarPath = parts[0].trim();
-                className = parts[1].trim();
-                actorName = parts[2].trim();
-            }
-
-            // Resolve Maven coordinate if applicable
-            jarPath = resolveMavenCoordinate(jarPath);
-
-            // Load actor using DynamicActorLoader
-            Path jar = Paths.get(jarPath);
-
-            // Also add to shared ClassLoader for potential reuse by createChild
-            if (!loadedJarPaths.contains(jarPath)) {
-                URL jarUrl = jar.toUri().toURL();
-                if (sharedClassLoader == null) {
-                    sharedClassLoader = new SharedClassLoader(
-                        new URL[]{jarUrl},
-                        getClass().getClassLoader()
-                    );
-                } else {
-                    sharedClassLoader.addURL(jarUrl);
-                }
-                loadedJarPaths.add(jarPath);
-                loadedJars.put(jarPath, sharedClassLoader);
-            }
-
-            Object actor = DynamicActorLoader.loadActor(jar, className, actorName);
-
-            // Wrap as IIActorRef if it implements CallableByActionName
-            if (actor instanceof CallableByActionName) {
-                // Inject ActorSystem if the plugin implements ActorSystemAware
-                if (actor instanceof ActorSystemAware) {
-                    ((ActorSystemAware) actor).setActorSystem(system);
-                }
-
-                GenericIIAR<?> actorRef = new GenericIIAR<>(actorName, actor, system);
-
-                // Inject IIActorRef if the plugin implements IIActorRefAware
-                if (actor instanceof IIActorRefAware) {
-                    ((IIActorRefAware) actor).setIIActorRef(actorRef);
-                }
-
-                system.addIIActor(actorRef);
-
-                return new ActionResult(true,
-                    "Loaded and registered actor: " + actorName +
-                    " from JAR: " + jarPath);
-            } else {
-                return new ActionResult(false,
-                    "Actor must implement CallableByActionName for workflow use");
-            }
-
-        } catch (Exception e) {
-            return ActionResult.error(e, "loader.loadFromJar");
-        }
     }
 
     /**
