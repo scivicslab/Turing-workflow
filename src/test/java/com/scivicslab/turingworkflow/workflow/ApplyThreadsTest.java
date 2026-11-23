@@ -169,7 +169,7 @@ class ApplyThreadsTest {
     }
 
     @Test
-    @DisplayName("on a pool real thread: children run on that thread, one after another")
+    @DisplayName("on a pool real thread: apply ends, and every child runs on a pool real thread")
     void fromPoolRealThread() {
         system = new IIActorSystem("apply-from-pool", 2);
         Parent parent = new Parent("main", 3, null);
@@ -184,11 +184,12 @@ class ApplyThreadsTest {
         assertEquals("Applied to 3 actors", result.getResult());
         assertFalse(applying.get().isVirtual());
         assertEquals(3, parent.runs.size());
+        // A child's message is queued and taken in its actor's turn (tell/ask with a ManagedThreadPool). The
+        // waiting pool real thread helps the pool while it waits, but another idle real thread may run a
+        // child as well, so which pool real thread runs which child is not fixed.
         for (ChildRun run : parent.runs) {
-            assertSame(applying.get(), run.thread(), run.child() + " ran on " + run.thread());
-            assertTrue(run.onPoolRealThread());
+            assertTrue(run.onPoolRealThread(), run.child() + " ran on " + run.thread());
         }
-        assertEquals(1, parent.mostAtOnce.get(), "one child at a time");
     }
 
     @Test
