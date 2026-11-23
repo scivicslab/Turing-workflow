@@ -1,0 +1,10 @@
+name: t250-recursive-call
+description: |
+  Calls itself until the stack runs out. The deepest call fails, each level has no other
+  transition, so the run must end false at the top without anything escaping runUntilEnd.
+steps:
+  - states: ["0", "end"]
+    actions:
+      - actor: this
+        method: call
+        arguments: ["t250-recursive-call.yaml"]

@@ -1,0 +1,7 @@
+name: t274-level1
+steps:
+  - states: ["0", "end"]
+    actions:
+      - actor: this
+        method: call
+        arguments: ["t274-level2.yaml"]

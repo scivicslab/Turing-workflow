@@ -1,0 +1,6 @@
+name: t274-gated
+steps:
+  - states: ["0", "end"]
+    actions:
+      - actor: gate
+        method: hold

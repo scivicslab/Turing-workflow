@@ -17,8 +17,6 @@
 
 package com.scivicslab.turingworkflow.workflow;
 
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.ExecutionException;
@@ -208,7 +206,10 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
     @Action("readYaml")
     public ActionResult readYaml(String args) {
         String path = parseFirstArgument(args);
-        try (InputStream input = new FileInputStream(new File(path))) {
+        // Only a file under the interpreter's base directory: a path that climbs out of it, is
+        // absolute elsewhere or is a link to elsewhere is refused (PathUnderBase).
+        try (InputStream input = java.nio.file.Files.newInputStream(
+                PathUnderBase.resolve(this.object.getWorkflowBaseDir(), path))) {
             this.tell((Interpreter i) -> i.readYaml(input)).get();
             return new ActionResult(true, "YAML loaded successfully");
         } catch (IOException e) {

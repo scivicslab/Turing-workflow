@@ -110,7 +110,10 @@ public class DynamicActorLoaderActor implements CallableByActionName {
     private final java.util.Set<String> loadedJarPaths = new java.util.LinkedHashSet<>();
 
     /** Shared ClassLoader for all dynamically loaded JARs */
-    private SharedClassLoader sharedClassLoader;
+    private volatile SharedClassLoader sharedClassLoader;
+
+    /** Guards {@link #loadedJarPaths}, {@link #loadedJars} and the making of {@link #sharedClassLoader}. */
+    private final Object jarLock = new Object();
 
     /** Why {@code loadFromJar} fails: it was removed in 5.0.0, and what replaces it. */
     static final String LOAD_FROM_JAR_REMOVED = Removal.reason("the action 'loader.loadFromJar'",
@@ -122,7 +125,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
     /**
      * URLClassLoader subclass that exposes addURL for dynamic JAR addition.
      */
-    private static class SharedClassLoader extends URLClassLoader {
+    static class SharedClassLoader extends URLClassLoader {
         SharedClassLoader(URL[] urls, ClassLoader parent) {
             super(urls, parent);
         }
@@ -144,9 +147,31 @@ public class DynamicActorLoaderActor implements CallableByActionName {
 
     private static final Logger logger = Logger.getLogger(DynamicActorLoaderActor.class.getName());
 
+    /** The user and password of a URL: {@code https://user:secret@host/}. */
+    private static final java.util.regex.Pattern URL_USER_INFO =
+            java.util.regex.Pattern.compile("([A-Za-z][A-Za-z0-9+.-]*://)[^/@\\s]+@");
+
+    /** A query or key=value parameter whose name says it holds a secret. */
+    private static final java.util.regex.Pattern SECRET_PARAMETER = java.util.regex.Pattern.compile(
+            "(?i)((?:^|[?&;,\\s])(?:password|passwd|pwd|token|access_token|secret|api_?key|key)=)[^&;,\\s'\"]*");
+
+    /**
+     * {@code text} with the credentials it may carry replaced by {@code ***}: the user and password
+     * of a URL, and the value of a parameter named like a secret. For log lines; the text the
+     * action works with is unchanged.
+     */
+    static String masked(String text) {
+        if (text == null) {
+            return null;
+        }
+        String noUser = URL_USER_INFO.matcher(text).replaceAll("$1***@");
+        return SECRET_PARAMETER.matcher(noUser).replaceAll("$1***");
+    }
+
     @Override
     public ActionResult callByActionName(String actionName, String args) {
-        logger.info("DynamicActorLoader: action='" + actionName + "' args='" + args + "'");
+        // FINE, and with credentials masked: an argument can be a URL or a query that carries them.
+        logger.fine("DynamicActorLoader: action='" + actionName + "' args='" + masked(args) + "'");
         try {
             switch (actionName) {
                 case "loadJar":
@@ -219,7 +244,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             String jarPath = resolveMavenCoordinate(jarSpec);
 
             // Check if already loaded
-            if (loadedJarPaths.contains(jarPath)) {
+            if (isLoaded(jarPath)) {
                 return new ActionResult(true, "JAR already loaded: " + jarPath);
             }
 
@@ -493,11 +518,15 @@ public class DynamicActorLoaderActor implements CallableByActionName {
      * @return ActionResult with the list of loaded JARs
      */
     private ActionResult listLoadedJars() {
-        if (loadedJarPaths.isEmpty()) {
+        List<String> paths;
+        synchronized (jarLock) {
+            paths = new ArrayList<>(loadedJarPaths);
+        }
+        if (paths.isEmpty()) {
             return new ActionResult(true, "No JARs loaded");
         }
         return new ActionResult(true,
-            "Loaded JARs: " + String.join(", ", loadedJarPaths));
+            "Loaded JARs: " + String.join(", ", paths));
     }
 
     /**
@@ -569,18 +598,47 @@ public class DynamicActorLoaderActor implements CallableByActionName {
      * @param jarUrl  the same jar as a URL for the class loader
      */
     private void addToSharedClassLoader(String jarPath, URL jarUrl) {
-        if (sharedClassLoader == null) {
-            sharedClassLoader = new SharedClassLoader(new URL[]{jarUrl}, getClass().getClassLoader());
-        } else {
-            sharedClassLoader.addURL(jarUrl);
-        }
-        loadedJarPaths.add(jarPath);
-        loadedJars.put(jarPath, sharedClassLoader);
+        // One jar at a time: two loads that both found no loader would each make one, and the
+        // jar of the loader made first would be dropped with it.
+        synchronized (jarLock) {
+            if (loadedJarPaths.contains(jarPath)) {
+                return;
+            }
+            if (sharedClassLoader == null) {
+                sharedClassLoader = newSharedClassLoader(jarUrl);
+            } else {
+                sharedClassLoader.addURL(jarUrl);
+            }
+            loadedJarPaths.add(jarPath);
+            loadedJars.put(jarPath, sharedClassLoader);
 
-        int added = IIActorRef.sharedSchemaRegistry().addFrom(sharedClassLoader);
-        if (added > 0) {
-            logger.info("Read " + added + " action schema(s) from " + jarPath);
+            int added = IIActorRef.sharedSchemaRegistry().addFrom(sharedClassLoader);
+            if (added > 0) {
+                logger.info("Read " + added + " action schema(s) from " + masked(jarPath));
+            }
         }
+    }
+
+    /**
+     * Returns whether the jar at this path has been loaded.
+     *
+     * @param jarPath the resolved path
+     * @return true when {@link #addToSharedClassLoader} has added it
+     */
+    private boolean isLoaded(String jarPath) {
+        synchronized (jarLock) {
+            return loadedJarPaths.contains(jarPath);
+        }
+    }
+
+    /**
+     * Makes the shared class loader for the first jar loaded.
+     *
+     * @param jarUrl the first jar
+     * @return a new shared class loader over that jar
+     */
+    SharedClassLoader newSharedClassLoader(URL jarUrl) {
+        return new SharedClassLoader(new URL[]{jarUrl}, getClass().getClassLoader());
     }
 
     /**
@@ -660,9 +718,7 @@ public class DynamicActorLoaderActor implements CallableByActionName {
             Path path = Paths.get(jarPath);
             URL jarUrl = path.toUri().toURL();
 
-            if (!loadedJarPaths.contains(jarPath)) {
-                addToSharedClassLoader(jarPath, jarUrl);
-            }
+            addToSharedClassLoader(jarPath, jarUrl);
             URLClassLoader classLoader = sharedClassLoader;
 
             // Load providers from the JAR using ServiceLoader
