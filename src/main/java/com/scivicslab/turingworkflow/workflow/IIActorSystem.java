@@ -75,6 +75,35 @@ public class IIActorSystem extends ActorSystem {
     /** The root actor for the actor hierarchy. */
     private final RootIIAR rootActor;
 
+    /** Whether the expressions of the workflows that run in this system are limited to an allow-list. */
+    private volatile boolean expressionAllowListEnabled;
+
+    /**
+     * Limits the expressions of every workflow that runs in this system, or lifts the limit.
+     *
+     * <p>By default an expression has the reach of Java: an action's argument and the patterns in
+     * {@code states} may create objects, read and write files and call the public methods of the
+     * classes of this library, POJO-actor and Jackson (JEXL's own refusals, such as
+     * {@code java.lang.System}, stay). With the allow-list enabled an expression may only call the
+     * methods listed in {@link WorkflowExpressions}, and nothing else. The setting belongs to the
+     * system, so every {@link Interpreter} over it, and the sub-workflows it runs, follow it. A host
+     * that runs workflows it does not trust enables it, before the first workflow starts.</p>
+     *
+     * @param enabled {@code true} to limit expressions to the allow-list; {@code false}, the default,
+     *                to leave them unlimited
+     */
+    public void setExpressionAllowListEnabled(boolean enabled) {
+        this.expressionAllowListEnabled = enabled;
+    }
+
+    /**
+     * @return whether expressions are limited to the allow-list; {@code false} unless
+     *         {@link #setExpressionAllowListEnabled} was called with {@code true}
+     */
+    public boolean isExpressionAllowListEnabled() {
+        return expressionAllowListEnabled;
+    }
+
     /**
      * Constructs a new IIActorSystem with the specified system name.
      *

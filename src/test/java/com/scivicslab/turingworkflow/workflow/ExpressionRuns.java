@@ -28,8 +28,15 @@ final class ExpressionRuns {
     final InterpreterIIAR self;
     final List<String> recorded = new CopyOnWriteArrayList<>();
 
+    /** A system with the expression allow-list on: the tests of what an expression cannot reach run on it. */
     ExpressionRuns(String name) {
+        this(name, true);
+    }
+
+    /** A system whose expression allow-list is on or off, as {@code allowList} says. */
+    ExpressionRuns(String name, boolean allowList) {
         system = new IIActorSystem(name);
+        system.setExpressionAllowListEnabled(allowList);
         interpreter = new Interpreter.Builder().loggerName(name).team(system).build();
         self = new InterpreterIIAR("main", interpreter, system);
         interpreter.setSelfActorRef(self);
@@ -45,6 +52,7 @@ final class ExpressionRuns {
 
     /** Reads {@code yaml} and runs it to its end, at most {@code steps} transitions. */
     ActionResult run(String yaml, int steps) {
+        interpreter.reset();
         interpreter.readYaml(new ByteArrayInputStream(yaml.getBytes(StandardCharsets.UTF_8)));
         return interpreter.runUntilEnd(steps);
     }

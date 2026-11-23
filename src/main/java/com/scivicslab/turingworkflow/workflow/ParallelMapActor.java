@@ -132,6 +132,8 @@ public class ParallelMapActor extends IIActorRef<Object> {
      */
     private ItemRun runOne(String subYaml, String baseDir, Object item, int idx) {
         IIActorSystem sub = new IIActorSystem("pm-" + getName() + "-" + idx, 2);
+        // The child system is isolated from the parent's actors, not from the parent's limit on expressions.
+        sub.setExpressionAllowListEnabled(parentSystem.isExpressionAllowListEnabled());
         try {
             Interpreter interp = new Interpreter.Builder().loggerName("pm-" + idx).team(sub).build();
             interp.setWorkflowBaseDir(baseDir);

@@ -24,6 +24,7 @@ class WorkflowExpressionsTest {
     @BeforeEach
     void setUp() {
         system = new IIActorSystem("expr-test");
+        system.setExpressionAllowListEnabled(true);
         expressions = new WorkflowExpressions(system);
     }
 

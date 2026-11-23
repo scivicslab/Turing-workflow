@@ -51,8 +51,10 @@ public abstract class IIActorRef<T> extends ActorRef<T> implements CallableByAct
      *
      * <p>{@code ActorRef} keeps it as a protected field, so only a subclass can hand it out. An
      * adapter's actions call the plain object through it, and tests read it back. A workflow's
-     * expression does not reach it: {@code actors.get(name)} answers a
-     * {@link WorkflowExpressions.ActorView}, the actor's last result and state.</p>
+     * expression does not get it from {@code actors.get(name)}, which answers a
+     * {@link WorkflowExpressions.ActorView}, the actor's last result and state. (With the
+     * expression allow-list off, an expression has the reach of Java and may still build or find
+     * objects by other means.)</p>
      *
      * <p>Reading it here does not go through the mailbox. Actions invoked by name do not either,
      * so this adds no sharing that was not already present.</p>

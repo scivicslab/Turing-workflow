@@ -99,6 +99,7 @@ class ActionErrorTest {
     @BeforeEach
     void setUp() {
         system = new IIActorSystem("action-error-test", 2);
+        system.setExpressionAllowListEnabled(true);
         interpreter = new Interpreter.Builder()
                 .loggerName("action-error-test")
                 .team(system)

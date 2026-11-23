@@ -1047,11 +1047,12 @@ public class Interpreter {
     }
 
     /**
-     * The evaluator for the expressions in {@code states}: {@link WorkflowExpressions#statesEngine()},
-     * which says what a pattern may reach and why it raises rather than answering nothing.
+     * The evaluator for the expressions in {@code states}: {@link WorkflowExpressions#statesEngine},
+     * which says what a pattern may reach, with the allow-list on or off, and why it raises rather
+     * than answering nothing.
      */
-    private static JexlEngine getJexlEngine() {
-        return WorkflowExpressions.statesEngine();
+    private JexlEngine getJexlEngine() {
+        return WorkflowExpressions.statesEngine(system);
     }
 
     /**
@@ -1428,6 +1429,35 @@ public class Interpreter {
      */
     public void setSelfActorRef(IIActorRef<?> actorRef) {
         this.selfActorRef = actorRef;
+    }
+
+    /**
+     * Limits the expressions of the workflows run in this interpreter's actor system to an
+     * allow-list, or lifts the limit; the same as {@link IIActorSystem#setExpressionAllowListEnabled}
+     * on the system it runs in.
+     *
+     * <p>Off by default: an expression, in an action's argument or in a {@code states} pattern, has
+     * the reach of Java. On, it may call only the methods listed in {@link WorkflowExpressions}. The
+     * setting is the system's, so every interpreter over the same system, and every sub-workflow,
+     * follows it.</p>
+     *
+     * @param enabled {@code true} to limit expressions to the allow-list
+     * @throws IllegalStateException when this interpreter has no actor system to hold the setting
+     */
+    public void setExpressionAllowListEnabled(boolean enabled) {
+        if (system == null) {
+            throw new IllegalStateException("The expression allow-list is a setting of the actor system; "
+                    + "this interpreter was built without one (Interpreter.Builder.team)");
+        }
+        system.setExpressionAllowListEnabled(enabled);
+    }
+
+    /**
+     * @return whether expressions are limited to the allow-list; {@code false} for an interpreter
+     *         with no actor system
+     */
+    public boolean isExpressionAllowListEnabled() {
+        return system != null && system.isExpressionAllowListEnabled();
     }
 
     /**

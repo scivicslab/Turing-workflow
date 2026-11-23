@@ -102,13 +102,18 @@ The expression is given five things:
 
 | name | what it is |
 |---|---|
-| `actors` | the actors in this system, by name — `actors.get('vars')` answers the object `vars` wraps |
+| `actors` | the actors in this system, by name — `actors.get('judge')` answers a read-only view of that actor: `.result` (its last action's message) and `.state` (its `JsonState`) |
 | `state` | this actor's `JsonState` |
 | `result` | what the previous action returned |
 | `self` | this actor's own name |
 | `currentState` | the state the machine is in |
 
 A value that does not start with `jexl:` is passed through as written.
+
+An expression has the reach of Java by default (`new`, files, any public method). A host that runs
+workflows it does not trust turns on the allow-list with `Interpreter.setExpressionAllowListEnabled(true)`
+or `run --expression-allow-list`; then an expression may call only the listed methods, and `String.matches`
+and `String.replaceAll` are not among them.
 
 ### Conditional Branching
 

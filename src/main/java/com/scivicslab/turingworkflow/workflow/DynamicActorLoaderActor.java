@@ -87,13 +87,16 @@ import java.util.logging.Logger;
  * is power for the operator who decides which workflows a process runs, not something a workflow's
  * text should reach on its own.</p>
  *
- * <p>So the loader is reached in one way only: a step that names it, {@code actor: loader} with
+ * <p>So the loader is reached by a step that names it, {@code actor: loader} with
  * {@code method: loadJar} or {@code createChild}. A host that registers a {@code loader} trusts every
- * workflow it runs to do this; a host that runs workflows it does not trust registers none. An
- * expression ({@code jexl:} in an argument or in {@code states}) cannot reach the loader, nor
- * build one: {@code actors.get("loader")} answers the actor's last result and state, not this
- * object, and an expression can neither call {@code new} nor call a method of this class
- * ({@code WorkflowExpressions}, {@code ExpressionReach_261122_oo01}). Only the explicit step
+ * workflow it runs to do this; a host that runs workflows it does not trust registers none and
+ * enables the expression allow-list ({@link IIActorSystem#setExpressionAllowListEnabled}).</p>
+ *
+ * <p>An expression ({@code jexl:} in an argument or in {@code states}) has the reach of Java by
+ * default, so it can build a loader of its own with {@code new}. {@code actors.get("loader")} answers
+ * the actor's last result and state, not this object, with the allow-list on or off. With the
+ * allow-list on, an expression can neither call {@code new} nor call a method of this class
+ * ({@code WorkflowExpressions}, {@code ExpressionReach_261122_oo01}), so only the explicit step
  * remains.</p>
  *
  * @author devteam@scivicslab.com

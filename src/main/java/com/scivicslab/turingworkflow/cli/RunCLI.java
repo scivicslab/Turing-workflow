@@ -62,7 +62,12 @@ import com.scivicslab.turingworkflow.workflow.accumulator.MultiplexerAccumulator
  * pojo-actor run -w ./hello.yaml
  * pojo-actor run -d ./workflows -w hello.yaml
  * pojo-actor run -w ./hello.yaml -P key=value
+ * pojo-actor run -w ./hello.yaml --expression-allow-list
  * </pre>
+ *
+ * <p>{@code --expression-allow-list} limits the {@code jexl:} expressions of the workflow to the
+ * methods listed in {@link com.scivicslab.turingworkflow.workflow.WorkflowExpressions}. Without it
+ * an expression has the reach of Java.</p>
  *
  * @author devteam@scivicslab.com
  * @since 3.0.0
@@ -117,6 +122,12 @@ public class RunCLI {
                 .hasArg(true)
                 .argName("key=value")
                 .desc("Override a workflow parameter (e.g., -P key=value); overrides params.default in YAML")
+                .build());
+        opts.addOption(Option.builder()
+                .longOpt("expression-allow-list")
+                .hasArg(false)
+                .desc("Limit the expressions of the workflow to an allow-list of methods "
+                        + "(default: off, an expression has the reach of Java)")
                 .build());
         opts.addOption(Option.builder("l")
                 .longOpt("log-level")
@@ -238,6 +249,9 @@ public class RunCLI {
                 .team(system)
                 .build();
         interpreter.setWorkflowBaseDir(baseDirectory.getAbsolutePath());
+        if (cl.hasOption("expression-allow-list")) {
+            interpreter.setExpressionAllowListEnabled(true);
+        }
 
         // Register built-in actors
         DynamicActorLoaderIIAR loaderActor = new DynamicActorLoaderIIAR("loader", system);

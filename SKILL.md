@@ -136,19 +136,15 @@ was false.
 
 ### Reading an actor's value — `actors.get(...)`
 
-In a `jexl:` argument, `actors.get('name')` answers the object the actor wraps, and the
-expression calls that object's own methods. The call happens at argument-evaluation time
-(before the current action runs), and the value keeps its type. The interpreter does not expand
-`$(actor.method)`; write it as an expression instead.
-
-| Actor | `actors.get(...)` answers | Example |
-|---|---|---|
-| `vars` | the map of variables | `actors.get('vars').get('input')` |
-| a plugin actor | the object it wraps | `actors.get('nodeGroup').getNodeCount()` (a method of that object) |
+In a `jexl:` argument, `actors.get('name')` answers a read-only view of the actor, not the object
+the actor wraps. The view has two readers: `.result`, the message of that actor's last action, and
+`.state`, its `JsonState`. An unregistered name answers `null` and creates nothing;
+`actors.has('name')` says whether `actors.get('name')` would find one. The call happens at
+argument-evaluation time (before the current action runs), and the value keeps its type.
 
 ```yaml
-arguments: "jexl: actors.get('vars').get('input')"                        # a variable, as text
-arguments: "jexl: 'value is ' + actors.get('vars').get('input') + ' now'"  # mixed with literal text
+arguments: "jexl: actors.get('judge').result"                      # what judge's last action answered
+arguments: "jexl: actors.get('worker').state.getString('output')"  # a value worker stored in its state
 ```
 
 A value the workflow keeps for itself belongs in its own state (section 3.2) and is read with
@@ -165,6 +161,35 @@ method of the wrapped object: call the action, then read its message with `jexl:
 
 The last result — the `message` of the previous `ActionResult` — is the variable `result` in a
 `jexl:` argument; the interpreter's state is `state`.
+
+### What an expression may do — and the optional allow-list
+
+By default a `jexl:` expression, in an action's arguments and in a `states` pattern, has the reach
+of Java: `new(...)` creates objects, files can be read and written, and any public method of any
+class can be called (JEXL runs with `JexlPermissions.UNRESTRICTED` and every JEXL feature). A
+workflow is a program, and whoever writes it may use what Java can do.
+
+A host that runs workflows it does not trust limits expressions to an allow-list. It is off by
+default. Turn it on before the first workflow starts:
+
+```java
+interpreter.setExpressionAllowListEnabled(true);   // or IIActorSystem.setExpressionAllowListEnabled(true)
+```
+
+```bash
+run -w workflow.yaml --expression-allow-list
+```
+
+The setting belongs to the `IIActorSystem`, so every interpreter over it, the sub-workflows, and each
+`parallel-map` item follow it. With the allow-list on, an expression may call only the methods listed
+in `WorkflowExpressions`: `state`'s readers, the Jackson node a list arrives as, and a few methods of
+`String`. It cannot create an object (`new` does not parse), read or write a file, or call a method
+of an object an actor wraps. `String.matches` and `String.replaceAll` are not on the list: a regular
+expression cannot be stopped part-way, so an input that makes it take very long would hold the run
+for as long. (JEXL's own `=~` operator can be interrupted and stays available.) A workflow that
+needs `matches` or `replaceAll` runs with the allow-list off. A host that registers a `loader`
+trusts every workflow it runs; a host that runs workflows it does not trust registers no `loader`
+and turns the allow-list on.
 
 ### JEXL expressions in `states`
 

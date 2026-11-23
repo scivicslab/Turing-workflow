@@ -3,6 +3,7 @@ package com.scivicslab.turingworkflow.workflow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.AfterEach;
@@ -32,6 +33,7 @@ class ExpressionAllowListTest {
     @BeforeEach
     void setUp() {
         system = new IIActorSystem("allow-list");
+        system.setExpressionAllowListEnabled(true);
         actor = new IIActorRef<Object>("main", new Object(), system) {};
         system.addIIActor(actor);
         actor.json().put("a", "alpha");
@@ -78,13 +80,18 @@ class ExpressionAllowListTest {
             assertEquals("file.md", eval("state.getString('path').substring(state.getString('path').lastIndexOf('/') + 1)"));
             assertEquals("inside", eval("state.getString('text').substring(state.getString('text').indexOf('[') + 1,"
                     + " state.getString('text').indexOf(']', state.getString('text').indexOf('[') + 1)).trim()"));
-            assertEquals(true, eval("!state.getString('a').matches('[0-9]+')"));
-            assertEquals("ALPHA", eval("state.getString('a').replaceAll('a', 'A').replaceAll('lph', 'LPH')"));
             assertEquals(true, eval("state.getString('text').trim().endsWith('tail')"));
             assertEquals(true, eval("state.getString('a').startsWith('al')"));
             assertEquals(true, eval("state.getString('a').contains('lph')"));
             assertEquals("five", eval("state.getString('a').length() == 5 ? 'five' : 'other'"));
             assertEquals("alpha", eval("state.getString('a').toString()"));
+        }
+
+        @Test
+        @DisplayName("matches and replaceAll are not on the list: a regular expression cannot be stopped part-way")
+        void regularExpressionMethodsAreRefused() {
+            assertThrows(RuntimeException.class, () -> eval("state.getString('a').matches('[0-9]+')"));
+            assertThrows(RuntimeException.class, () -> eval("state.getString('a').replaceAll('a', 'A')"));
         }
 
         @Test

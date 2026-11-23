@@ -41,10 +41,24 @@ import com.scivicslab.pojoactor.core.JsonState;
  * Evaluates an expression with the actors of one {@link IIActorSystem} in reach.
  *
  * <p>An expression reads values and keeps their type: {@code state.getInt("i", 0)} is an
- * {@code int}, not the text {@code "3"}. What it may call is a fixed list, {@code ARGUMENT_METHODS}
- * for an action's arguments and {@code STATE_METHODS} for the patterns in {@code states}; it cannot
- * create an object, read or write a file, or call a method of an object an actor wraps; another
- * actor is read through {@code actors.get(name)}, which answers an {@link ActorView}.</p>
+ * {@code int}, not the text {@code "3"}. Another actor is read through {@code actors.get(name)},
+ * which answers an {@link ActorView}.</p>
+ *
+ * <h2>What an expression may do</h2>
+ * By default an expression has the reach of Java: it may create objects with {@code new}, read and
+ * write files, and call any public method of any class, as the code of the host can
+ * ({@link JexlPermissions#UNRESTRICTED}, with all of JEXL's features). A workflow is a program, and
+ * the person who writes it may use what Java can do. JEXL 3.7.1's {@code RESTRICTED} set, which this
+ * library used before the allow-list, no longer allows file streams, so the reach of Java needs the
+ * unrestricted set.
+ *
+ * <p>A host that runs workflows it does not trust limits expressions to an allow-list, with
+ * {@link IIActorSystem#setExpressionAllowListEnabled(boolean)} (or {@code run --expression-allow-list}).
+ * Then an expression may call only the methods in {@code ARGUMENT_METHODS}, for an action's
+ * arguments, and {@code STATE_METHODS}, for the patterns in {@code states}; it cannot create an
+ * object, read or write a file, or call a method of an object an actor wraps. The list leaves out
+ * {@code matches} and {@code replaceAll} on text: a regular expression cannot be stopped part-way, so
+ * a text that makes it take very long would hold the run for as long.</p>
  *
  * <h2>Why a lookup rather than names in scope</h2>
  * Actor names carry characters an expression cannot use as an identifier — {@code node:web-1} has a
@@ -74,8 +88,14 @@ public final class WorkflowExpressions {
     /**
      * The methods an action's argument expression may call, by the type of the value it calls them on.
      *
-     * <p>An expression is text in a workflow YAML, and whoever writes the YAML is not trusted with the
-     * JVM. Permission used to go by package — {@code RESTRICTED} plus this library, POJO-actor and
+     * <p>Used only when the allow-list is on ({@link IIActorSystem#setExpressionAllowListEnabled}); by
+     * default an expression is not limited to it. The list leaves out {@code String.matches} and
+     * {@code String.replaceAll}: a regular expression cannot be stopped part-way, so an input that
+     * makes it take very long would hold the run for as long. A workflow that needs them runs with the
+     * allow-list off.</p>
+     *
+     * <p>An expression is text in a workflow YAML, and a host that runs workflows it does not trust does
+     * not trust whoever writes the YAML with the JVM. Permission used to go by package — {@code RESTRICTED} plus this library, POJO-actor and
      * Jackson's databind — and that reached far more than a workflow reads: {@code java.io}'s streams
      * read and wrote files, {@code FileAccumulator} and {@code ObjectMapper} wrote them too, and a
      * {@code DynamicActorLoaderActor} built inside the expression loaded a jar and ran it
@@ -95,7 +115,7 @@ public final class WorkflowExpressions {
                     "getBoolean", "get", "has"),
             JsonNode.class, Set.of("size", "get", "asText", "isArray", "toString"),
             String.class, Set.of("length", "indexOf", "lastIndexOf", "substring", "trim",
-                    "startsWith", "endsWith", "contains", "matches", "replaceAll", "toString"));
+                    "startsWith", "endsWith", "contains", "toString"));
 
     /**
      * The methods a from-state or to-state pattern may call.
@@ -145,6 +165,50 @@ public final class WorkflowExpressions {
      */
     private static final JexlEngine STATES = engine(STATE_METHODS);
 
+    /**
+     * What an expression may be written with when the allow-list is off: every JEXL feature
+     * ({@code new}, assignment, loops, lambdas, literal lists and maps), and assignment to a name the
+     * expression has not declared, which sets it in the expression's scope as JEXL has always done.
+     *
+     * <p>{@link JexlFeatures#createAll()} also turns on lexical scoping, which refuses
+     * {@code (l = new(...)).run(); l.stop()} with "variable 'l' is undefined" unless every name is
+     * declared with {@code var}; an expression written before the allow-list does not declare its
+     * names, so lexical scoping is turned off again.</p>
+     */
+    private static final JexlFeatures OPEN_FEATURES = JexlFeatures.createAll().lexical(false).lexicalShade(false);
+
+    /**
+     * The evaluator for an action's argument expressions when the allow-list is off, the default.
+     *
+     * <p>All of JEXL's features ({@code OPEN_FEATURES}: {@code new}, assignment, loops,
+     * lambdas) and {@link JexlPermissions#UNRESTRICTED}: an expression has the reach of Java. Strict and not safe
+     * for the reasons given at {@link #JEXL}.</p>
+     */
+    private static final JexlEngine OPEN_JEXL = new JexlBuilder()
+            .silent(false)
+            .strict(true)
+            .safe(false)
+            .features(OPEN_FEATURES)
+            .permissions(JexlPermissions.UNRESTRICTED)
+            .create();
+
+    /**
+     * The evaluator for from-state and to-state patterns when the allow-list is off, the default:
+     * all of JEXL's features ({@code OPEN_FEATURES}) and {@link JexlPermissions#UNRESTRICTED}, strict and not safe for the
+     * reasons given at {@link #STATES}.
+     */
+    private static final JexlEngine OPEN_STATES = new JexlBuilder()
+            .silent(false)
+            .strict(true)
+            .safe(false)
+            .features(OPEN_FEATURES)
+            .permissions(JexlPermissions.UNRESTRICTED)
+            .create();
+
+    private static boolean limited(IIActorSystem system) {
+        return system != null && system.isExpressionAllowListEnabled();
+    }
+
     private static JexlEngine engine(Map<Class<?>, Set<String>> methods) {
         return new JexlBuilder()
                 .silent(false)
@@ -156,10 +220,12 @@ public final class WorkflowExpressions {
     }
 
     /**
-     * @return the evaluator {@link Interpreter} uses for the expressions in {@code states}
+     * @param system the system the workflow runs in; {@code null} for an interpreter that has none
+     * @return the evaluator {@link Interpreter} uses for the expressions in {@code states}: the
+     *         allow-list one when {@code system} has the allow-list on, the open one otherwise
      */
-    static JexlEngine statesEngine() {
-        return STATES;
+    static JexlEngine statesEngine(IIActorSystem system) {
+        return limited(system) ? STATES : OPEN_STATES;
     }
 
     private static Map<Class<?>, Set<String>> methods(Object... typeThenNames) {
@@ -319,7 +385,8 @@ public final class WorkflowExpressions {
         context.set(RESULT_NAME, self == null ? null : self.getLastResultValue());
         context.set(SELF_NAME, self == null ? null : self.getName());
         context.set(CURRENT_STATE_NAME, currentState);
-        return JEXL.createExpression(expression).evaluate(context);
+        JexlEngine engine = limited(system) ? JEXL : OPEN_JEXL;
+        return engine.createExpression(expression).evaluate(context);
     }
 
     /**
