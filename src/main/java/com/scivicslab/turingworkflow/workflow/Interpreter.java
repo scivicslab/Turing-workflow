@@ -1937,9 +1937,16 @@ public class Interpreter {
             // puts it on its own wait.
             // A pool real thread that waits runs the pool's queued tasks while it waits (awaitHelping),
             // so a pool whose real threads all wait here still makes progress.
+            // The futures that ask returns do this in get() and join(); allOf(...) does not, so each
+            // answer is waited for on its own first. A failure is read from the derived stages below.
             if (pool.ownsCurrentThread()) {
                 for (CompletableFuture<Void> f : asks) {
-                    pool.awaitHelping(f);
+                    try {
+                        f.join();
+                    } catch (java.util.concurrent.CompletionException e) {
+                        // this child's failure is recorded by its derived stage; fatal errors rethrow below
+                        ActionResult.rethrowIfFatal(e.getCause() != null ? e.getCause() : e);
+                    }
                 }
             }
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
