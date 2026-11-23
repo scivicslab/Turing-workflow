@@ -35,9 +35,11 @@ Loads external JAR files and creates actors from their classes at runtime.
       arguments: ["ROOT", "myActor", "com.example.MyActorIIAR"]
 ```
 
-### 3.2 `log` — Output accumulator
+### 3.2 `outputMultiplexer` — Output multiplexer
 
-Accumulates structured log entries. By default, entries are printed to stdout.
+Hands each entry to its targets; the run command's one target prints it to stdout. Nodes, reports
+and the log handler write here too: this is the one name the multiplexer is registered and looked
+up by (`MultiplexerAccumulatorIIAR.ACTOR_NAME`).
 
 | Method | Arguments | Description |
 |--------|-----------|-------------|

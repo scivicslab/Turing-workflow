@@ -1,0 +1,13 @@
+name: t275-outer
+steps:
+  - states: ["0", "1"]
+    actions:
+      - actor: group
+        method: apply
+        arguments:
+          actor: "*"
+          method: callInner
+  - states: ["1", "end"]
+    actions:
+      - actor: marks
+        method: outerDone

@@ -174,6 +174,21 @@ public class RunCLI {
         }
     }
 
+    /**
+     * Registers the output multiplexer a run writes its output through, under
+     * {@link MultiplexerAccumulatorIIAR#ACTOR_NAME}, with the console as its one target, and returns
+     * it so that a caller can add more targets.
+     *
+     * @param system the actor system of the run
+     * @return the multiplexer the registered actor wraps
+     */
+    public static MultiplexerAccumulator registerOutputMultiplexer(IIActorSystem system) {
+        MultiplexerAccumulator mux = new MultiplexerAccumulator();
+        mux.addTarget(new ConsoleAccumulator());
+        system.addIIActor(new MultiplexerAccumulatorIIAR(MultiplexerAccumulatorIIAR.ACTOR_NAME, mux, system));
+        return mux;
+    }
+
     private int runIn(CommandLine cl, IIActorSystem system) {
         // Parse options
         File baseDirectory = new File(cl.getOptionValue("d", "."));
@@ -257,10 +272,7 @@ public class RunCLI {
         DynamicActorLoaderIIAR loaderActor = new DynamicActorLoaderIIAR("loader", system);
         system.addIIActor(loaderActor);
 
-        MultiplexerAccumulator mux = new MultiplexerAccumulator();
-        mux.addTarget(new ConsoleAccumulator());
-        MultiplexerAccumulatorIIAR logActor = new MultiplexerAccumulatorIIAR("log", mux, system);
-        system.addIIActor(logActor);
+        registerOutputMultiplexer(system);
 
         // Create vars actor and register
         VarsActor varsActor = new VarsActor(system, variables);

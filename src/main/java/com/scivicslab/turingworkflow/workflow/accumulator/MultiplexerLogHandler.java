@@ -92,7 +92,7 @@ public class MultiplexerLogHandler extends Handler {
         }
 
         // Get the multiplexer actor (lazy lookup for loose coupling)
-        IIActorRef<?> multiplexer = system.getIIActor("outputMultiplexer");
+        IIActorRef<?> multiplexer = system.getIIActor(MultiplexerAccumulatorIIAR.ACTOR_NAME);
         if (multiplexer == null) {
             // Multiplexer not yet registered, skip
             return;

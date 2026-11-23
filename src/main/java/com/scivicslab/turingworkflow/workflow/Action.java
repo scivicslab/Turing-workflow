@@ -38,7 +38,7 @@ public class Action {
     private String actor;
     private String method;
     private Object arguments;  // String, List, or Map
-    private ExecutionMode execution = ExecutionMode.POOL;  // Default: pool
+    private ExecutionMode execution = null;  // null: the step gave no execution key
     private int poolIndex = 0;
 
     /**
@@ -115,11 +115,21 @@ public class Action {
     }
 
     /**
-     * Gets the execution mode.
+     * Gets the execution mode, {@link ExecutionMode#POOL} when the step gave none.
      *
      * @return the execution mode
      */
     public ExecutionMode getExecution() {
+        return execution != null ? execution : ExecutionMode.POOL;
+    }
+
+    /**
+     * Gets the execution mode the step gave, or null when it gave none; the Interpreter then takes
+     * the action's own default ({@link com.scivicslab.pojoactor.action.Action#orchestrates()}).
+     *
+     * @return the execution mode written in the step, or null
+     */
+    public ExecutionMode getDeclaredExecution() {
         return execution;
     }
 

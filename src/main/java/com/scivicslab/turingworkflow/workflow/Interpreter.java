@@ -318,10 +318,11 @@ public class Interpreter {
             for (IIActorRef<?> actorAR : actors) {
                 ActionResult result;
 
-                // Execute based on ExecutionMode
-                ExecutionMode executionMode = a.getExecution();
+                // Execute based on ExecutionMode. A step that gives none takes the action's own:
+                // MAILBOX for an action that orchestrates (@Action(orchestrates = true)), else POOL.
+                ExecutionMode executionMode = a.getDeclaredExecution();
                 if (executionMode == null) {
-                    executionMode = ExecutionMode.POOL;  // Default to POOL
+                    executionMode = actorAR.orchestrates(action) ? ExecutionMode.MAILBOX : ExecutionMode.POOL;
                 }
 
                 // A failed action is false, however it failed: an exception or an Error becomes a
@@ -329,7 +330,11 @@ public class Interpreter {
                 // A fatal error is recorded the same way and then rethrown (failedWith).
                 String where = actorAR.getName() + "." + action;
                 try {
-                    if (executionMode == ExecutionMode.POOL && system != null
+                    if (executionMode == ExecutionMode.MAILBOX && canWaitForOwnMailbox()) {
+                        // MAILBOX: the action runs on this interpreter's mailbox virtual thread, and
+                        // this thread, which is not one of the pool's real threads, waits for it.
+                        result = selfActorRef.ask(unused -> actorAR.callByActionName(action, argumentString)).get();
+                    } else if (executionMode == ExecutionMode.POOL && system != null
                             && system.getManagedThreadPool() instanceof ManagedThreadPool pool
                             && pool.ownsCurrentThread()) {
                         // POOL, already on one of the pool's real threads: run here. This happens in
@@ -372,6 +377,23 @@ public class Interpreter {
         ActionResult successResult = new ActionResult(true, "");
         logger.exiting(CLASS_NAME, "action", successResult);
         return successResult;
+    }
+
+    /**
+     * Whether this thread can wait for an action run on this interpreter's mailbox virtual thread.
+     *
+     * <p>Not when there is no mailbox (no actor of its own), not on that mailbox virtual thread
+     * itself (the message would queue behind the one that waits for it), and not on one of the
+     * ManagedThreadPool's real threads: the action hands work to the pool, and a pool real thread
+     * waiting for that work can hang the pool (with one real thread, at once). Then the action runs
+     * on this thread instead.</p>
+     */
+    private boolean canWaitForOwnMailbox() {
+        if (selfActorRef == null || selfActorRef.ownsCurrentThread()) {
+            return false;
+        }
+        return !(system != null && system.getManagedThreadPool() instanceof ManagedThreadPool pool
+                && pool.ownsCurrentThread());
     }
 
     /**
@@ -2016,65 +2038,6 @@ public class Interpreter {
         }
 
         return matched;
-    }
-
-    // ========================================================================
-    // Accumulator Support
-    // ========================================================================
-
-    /**
-     * Adds a result to the accumulator actor in the system.
-     *
-     * <p>This is a convenience method for child workflows to report results
-     * back to an accumulator. It looks up the accumulator actor by name
-     * (default: "accumulator") and calls its "add" action.</p>
-     *
-     * <p><strong>Usage in YAML:</strong></p>
-     * <pre>{@code
-     * - states: ["0", "1"]
-     *   actions:
-     *     - actor: this
-     *       method: addToAccumulator
-     *       arguments:
-     *         type: "cpu"
-     *         data: "Intel Xeon E5-2680"
-     * }</pre>
-     *
-     * @param type the type of result (e.g., "cpu", "memory")
-     * @param data the result data
-     * @return ActionResult indicating success or failure
-     * @since 2.8.0
-     */
-    public ActionResult addToAccumulator(String type, String data) {
-        return addToAccumulator("accumulator", type, data);
-    }
-
-    /**
-     * Adds a result to a named accumulator actor in the system.
-     *
-     * @param accumulatorName the name of the accumulator actor
-     * @param type the type of result (e.g., "cpu", "memory")
-     * @param data the result data
-     * @return ActionResult indicating success or failure
-     * @since 2.8.0
-     */
-    public ActionResult addToAccumulator(String accumulatorName, String type, String data) {
-        if (system == null) {
-            return new ActionResult(false, "No actor system available");
-        }
-
-        IIActorRef<?> accumulator = system.getIIActor(accumulatorName);
-        if (accumulator == null) {
-            return new ActionResult(false, "Accumulator not found: " + accumulatorName);
-        }
-
-        // Build the argument JSON
-        JSONObject addArg = new JSONObject();
-        addArg.put("source", selfActorRef != null ? selfActorRef.getName() : "unknown");
-        addArg.put("type", type);
-        addArg.put("data", data);
-
-        return accumulator.callByActionName("add", addArg.toString());
     }
 
 }

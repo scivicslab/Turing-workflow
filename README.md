@@ -63,10 +63,12 @@ steps:
           file: "data.csv"
   - states: ["1", "end"]
     actions:
-      - actor: log
-        method: info
+      - actor: outputMultiplexer
+        method: add
         arguments:
-          message: "Done"
+          source: "my-workflow"
+          type: "stdout"
+          data: "Done"
 ```
 
 This follows the same mental model as `tell()`/`ask()` in Java code. The combination allows complex logic that traditional YAML-based workflow languages struggle with — without introducing custom syntax.

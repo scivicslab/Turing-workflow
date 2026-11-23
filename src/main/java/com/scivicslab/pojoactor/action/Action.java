@@ -156,4 +156,36 @@ public @interface Action {
      * @since 3.5.0
      */
     Class<?> argsType() default Void.class;
+
+    /**
+     * Whether this action orchestrates: it hands its work to other actors and waits for them,
+     * doing no heavy work of its own.
+     *
+     * <p>A workflow step that names an orchestrating action and gives no {@code execution:} key is
+     * not handed to the ManagedThreadPool. The Interpreter runs it on its own mailbox virtual
+     * thread instead, and the step's thread waits for it. The action's waiting then happens on that
+     * virtual thread, while the work it hands out runs on the pool's real threads, in parallel.
+     * The Interpreter runs it right where the step is instead when the step's thread is already its
+     * mailbox virtual thread, or is one of the pool's real threads (waiting there for work that
+     * needs the pool could hang it), or when it has no actor of its own. A step's explicit
+     * {@code execution: pool} or {@code execution: direct} wins over this.</p>
+     *
+     * <p>An orchestrating action must:</p>
+     * <ul>
+     *   <li>run its own code on the thread it is called on: it does not hand itself to the pool;</li>
+     *   <li>give the heavy work to other actors, for example with {@code ask(action, pool)},
+     *       whose inline rule also keeps it safe when it is called on a pool real thread;</li>
+     *   <li>not ask the calling interpreter through its mailbox and wait, since it runs on that
+     *       mailbox.</li>
+     * </ul>
+     *
+     * <pre>{@code
+     * @Action(value = "apply", orchestrates = true)
+     * public ActionResult apply(String args) { ... }
+     * }</pre>
+     *
+     * @return true for an action that only hands out work and waits for it
+     * @since 4.9.0
+     */
+    boolean orchestrates() default false;
 }

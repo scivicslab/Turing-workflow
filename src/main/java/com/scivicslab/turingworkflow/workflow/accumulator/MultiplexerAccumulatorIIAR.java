@@ -79,6 +79,12 @@ import com.scivicslab.turingworkflow.workflow.IIActorSystem;
  */
 public class MultiplexerAccumulatorIIAR extends IIActorRef<MultiplexerAccumulator> {
 
+    /**
+     * The one name the output multiplexer is registered and looked up by. Whoever registers it and
+     * whoever writes to it use this name, so that output cannot go to a name nobody registered.
+     */
+    public static final String ACTOR_NAME = "outputMultiplexer";
+
     private final Logger logger;
 
     /**
