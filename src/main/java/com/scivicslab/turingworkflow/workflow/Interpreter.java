@@ -1889,7 +1889,7 @@ public class Interpreter {
             // Called on one of the pool's real threads, as a workflow step reaches it through
             // InterpreterIIAR, ask runs each child right here, one after another (ActorRef's inline
             // rule): no parallelism, but no pool real thread waits for work queued behind itself.
-            ExecutorService pool = system.getManagedThreadPool();
+            ManagedThreadPool pool = system.getManagedThreadPool();
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             final String finalArgs = args;
 

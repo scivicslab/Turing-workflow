@@ -96,7 +96,8 @@ public class ParallelMapActor extends IIActorRef<Object> {
      * @param subWorkflow the sub-workflow's YAML file name
      * @param items       the items, one sub-workflow run each; each is put in the sub-workflow's state at
      *                    {@code input}
-     * @param maxParallel how many items run at once; six when absent
+     * @param maxParallel how many items are given to the pool at once, from 1 to {@link #MAX_PARALLEL_LIMIT};
+     *                    the pool's real-thread count when absent
      * @param baseDir     the directory the sub-workflow runs in, under the calling interpreter's base
      *                    directory; the caller's base directory when absent
      */
@@ -114,13 +115,12 @@ public class ParallelMapActor extends IIActorRef<Object> {
                     + " is outside 1.." + MAX_PARALLEL_LIMIT);
         }
         final String subYaml = args.subWorkflow();
-        final int maxParallel = args.maxParallel() != null ? args.maxParallel() : DEFAULT_PARALLEL;
         // The sub-workflows read under the calling interpreter's base directory, as its own path loads
         // do; an explicit baseDir must lie under it. A caller with none restricts nothing.
         final String callerBase = Interpreter.baseDirOfDispatchingInterpreter();
         final String baseDir;
         if (args.baseDir() == null) {
-            baseDir = callerBase;
+            baseDir = callerBase != null ? callerBase : ".";
         } else if (callerBase == null) {
             baseDir = args.baseDir();
         } else {
@@ -196,10 +196,21 @@ public class ParallelMapActor extends IIActorRef<Object> {
      * Makes item {@code idx} a child actor of this one and asks it, on the pool, to run the sub-workflow.
      * The item's actor is removed as soon as its run ends, and its slot, when there is one, is given back.
      */
-    private ItemRun runOne(String subYaml, String baseDir, Object item, int idx) {
-        IIActorSystem sub = new IIActorSystem("pm-" + getName() + "-" + idx, 2);
-        // The child system is isolated from the parent's actors, not from the parent's limit on expressions.
-        sub.setExpressionAllowListEnabled(parentSystem.isExpressionAllowListEnabled());
+    private CompletableFuture<ItemRun> askItem(ManagedThreadPool pool, String runName, Object item, int idx,
+                                               String subYaml, String baseDir, List<String> made,
+                                               Semaphore slots) {
+        String name = runName + ".item-" + idx;
+        Interpreter interp = new Interpreter.Builder().loggerName(name).team(parentSystem).build();
+        interp.setWorkflowBaseDir(baseDir);
+        Item child = new Item(name, interp, parentSystem);
+        interp.setSelfActorRef(child);
+        child.setParentName(getName());
+        getNamesOfChildren().add(name);
+        parentSystem.addIIActor(child);
+        synchronized (made) {
+            made.add(name);
+        }
+        CompletableFuture<ItemRun> asked;
         try {
             asked = child.ask(i -> runItem(child, i, subYaml, item, idx), pool);
         } catch (Throwable t) {
