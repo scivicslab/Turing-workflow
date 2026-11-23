@@ -221,10 +221,14 @@ public class ParallelMapActor extends IIActorRef<Object> {
             if (slots != null) slots.release();
             throw t;
         }
-        return asked.whenComplete((r, t) -> {
+        // The cleanup is registered on the answer of the item's message; the answer itself is returned, so
+        // that a pool real thread that waits for it runs queued pool tasks (awaitHelping does that only for
+        // the answer of an actor's message, not for a stage derived from it).
+        asked.whenComplete((r, t) -> {
             removeItem(name);
             if (slots != null) slots.release();
         });
+        return asked;
     }
 
     /** Takes an item's actor out of the system and out of this actor's children. */

@@ -1891,10 +1891,11 @@ public class Interpreter {
             // rule): no parallelism, but no pool real thread waits for work queued behind itself.
             ManagedThreadPool pool = system.getManagedThreadPool();
             List<CompletableFuture<Void>> futures = new ArrayList<>();
+            List<CompletableFuture<Void>> asks = new ArrayList<>();
             final String finalArgs = args;
 
             for (IIActorRef<?> actor : matchedActors) {
-                CompletableFuture<Void> future = actor.<Void>ask(unused -> {
+                CompletableFuture<Void> asked = actor.<Void>ask(unused -> {
                     try {
                         ActionResult result = actor.callByActionName(methodName, finalArgs);
                         if (!result.isSuccess()) {
@@ -1915,7 +1916,11 @@ public class Interpreter {
                         ActionResult.rethrowIfFatal(t);
                     }
                     return null;
-                }, pool).exceptionally(t -> {
+                }, pool);
+                // The wait below is on the answer of the child's message itself (awaitHelping runs queued
+                // pool tasks only for such a future); the failures are read from the derived stage.
+                asks.add(asked);
+                CompletableFuture<Void> future = asked.exceptionally(t -> {
                     // The child's work never ran: the child is closed, or the pool dropped the task
                     // when the system terminated. That is this child's failure. A fatal error goes
                     // on to the join below.
@@ -1933,7 +1938,7 @@ public class Interpreter {
             // A pool real thread that waits runs the pool's queued tasks while it waits (awaitHelping),
             // so a pool whose real threads all wait here still makes progress.
             if (pool.ownsCurrentThread()) {
-                for (CompletableFuture<Void> f : futures) {
+                for (CompletableFuture<Void> f : asks) {
                     pool.awaitHelping(f);
                 }
             }
