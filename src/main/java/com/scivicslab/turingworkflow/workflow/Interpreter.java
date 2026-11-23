@@ -1930,6 +1930,13 @@ public class Interpreter {
             // action may legitimately run a long time, and every future here now always
             // completes. Following TimeoutAndScheduler_251012_oo01, a caller that needs a limit
             // puts it on its own wait.
+            // A pool real thread that waits runs the pool's queued tasks while it waits (awaitHelping),
+            // so a pool whose real threads all wait here still makes progress.
+            if (pool.ownsCurrentThread()) {
+                for (CompletableFuture<Void> f : futures) {
+                    pool.awaitHelping(f);
+                }
+            }
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
             if (failures.isEmpty()) {
@@ -1944,6 +1951,9 @@ public class Interpreter {
                         String.join("; ", failureMessages)));
             }
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ActionResult.error(e, "apply, waiting for the children");
         } catch (Throwable t) {
             // A fatal error from a child arrives here inside a CompletionException: rethrow it.
             ActionResult.rethrowIfFatal(t);

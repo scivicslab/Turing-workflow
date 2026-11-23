@@ -139,7 +139,9 @@ public class ParallelMapActor extends IIActorRef<Object> {
             if (pool.ownsCurrentThread()) {
                 // On a pool real thread: ask runs each item inline, here, one after another.
                 for (int i = 0; i < items.size(); i++) {
-                    outputs.add(askItem(pool, runName, items.get(i), i, subYaml, baseDir, made, null).join());
+                    CompletableFuture<ItemRun> item = askItem(pool, runName, items.get(i), i, subYaml, baseDir, made, null);
+                    pool.awaitHelping(item);
+                    outputs.add(item.get());
                 }
             } else {
                 // Off the pool: at most maxParallel items in flight on the pool's real threads; this
