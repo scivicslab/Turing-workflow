@@ -1963,9 +1963,6 @@ public class Interpreter {
                         String.join("; ", failureMessages)));
             }
 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return ActionResult.error(e, "apply, waiting for the children");
         } catch (Throwable t) {
             // A fatal error from a child arrives here inside a CompletionException: rethrow it.
             ActionResult.rethrowIfFatal(t);
