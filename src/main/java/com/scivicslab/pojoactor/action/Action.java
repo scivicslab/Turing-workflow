@@ -185,7 +185,7 @@ public @interface Action {
      * }</pre>
      *
      * @return true for an action that only hands out work and waits for it
-     * @since 4.9.0
+     * @since 5.0.0
      */
     boolean orchestrates() default false;
 }
