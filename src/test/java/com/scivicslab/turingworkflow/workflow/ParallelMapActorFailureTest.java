@@ -54,16 +54,14 @@ class ParallelMapActorFailureTest {
                     arguments: {path: output, value: "jexl: 'processed: ' + state.getString('input')"}
             """;
 
-    /** Calls a {@link Bomb} for every item, so every item's run ends in a fatal error. */
+    /**
+     * Calls the {@link Bomb} for every item, so every item's run ends in a fatal error. The bomb is
+     * registered before the run: an item has no loader to make it with.
+     */
     private static final String BOMB_YAML = """
             name: bomb
             steps:
-              - states: ["0", "1"]
-                actions:
-                  - actor: loader
-                    method: createChild
-                    arguments: ["ROOT", "bomb", "com.scivicslab.turingworkflow.workflow.ParallelMapActorFailureTest$Bomb"]
-              - states: ["1", "end"]
+              - states: ["0", "end"]
                 actions:
                   - actor: bomb
                     method: explode
@@ -153,6 +151,7 @@ class ParallelMapActorFailureTest {
         Files.writeString(yaml, BOMB_YAML);
 
         IIActorSystem system = new IIActorSystem("pm-fatal-test");
+        system.addIIActor(new Bomb("bomb", system));
         try {
             Interpreter interpreter = new Interpreter.Builder().loggerName("pm-fatal-test").team(system).build();
             InterpreterIIAR self = new InterpreterIIAR("main", interpreter, system);
