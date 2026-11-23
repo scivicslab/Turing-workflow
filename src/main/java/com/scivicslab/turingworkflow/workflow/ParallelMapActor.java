@@ -120,7 +120,7 @@ public class ParallelMapActor extends IIActorRef<Object> {
         final String callerBase = Interpreter.baseDirOfDispatchingInterpreter();
         final String baseDir;
         if (args.baseDir() == null) {
-            baseDir = callerBase != null ? callerBase : ".";
+            baseDir = callerBase;
         } else if (callerBase == null) {
             baseDir = args.baseDir();
         } else {

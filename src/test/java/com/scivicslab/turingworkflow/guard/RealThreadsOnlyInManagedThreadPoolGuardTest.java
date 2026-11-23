@@ -76,7 +76,12 @@ class RealThreadsOnlyInManagedThreadPoolGuardTest {
         // Runtime.addShutdownHook takes an unstarted Thread object, which the JDK starts at exit; there
         // is no other way to register a shutdown hook.
         new Exemption("/LogServeCLI.java", "addShutdownHook(new Thread(",
-            "a shutdown hook, which the JDK requires as a Thread object"));
+            "a shutdown hook, which the JDK requires as a Thread object"),
+        // The WorkflowScheduler's tick pool is built with a virtual-thread factory (Thread.ofVirtual()),
+        // so none of its threads is a real thread; the pattern only sees the pool method's name.
+        new Exemption("/com/scivicslab/turingworkflow/workflow/scheduler/WorkflowScheduler.java",
+            "newScheduledThreadPool(",
+            "a scheduled pool whose thread factory makes virtual threads only"));
 
     @Test
     @DisplayName("no real thread pool, commonPool use, hand-started real thread or HttpClient without an executor")
