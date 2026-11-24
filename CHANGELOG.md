@@ -1,6 +1,6 @@
 # Changelog
 
-## 5.0.0 (draft)
+## 5.0.0
 
 Changes since `v4.8.0` (`503bf1e`). Turing-workflow 5.0.0 needs POJO-actor 5.0.0, whose futures now always complete (see POJO-actor's `CHANGELOG.md`). The specification of failed actions is `060_ErrorHandling_260509_oo01`.
 
@@ -313,6 +313,38 @@ Up to 4.8.0, `this.call` ran the child workflow on the real thread of the callin
 Now `Interpreter.action` calls the actor directly when the pool returned by `system.getManagedThreadPool()` owns the current real thread. Otherwise it hands the action to the pool as before. A top-level POOL action called from a virtual thread or from another real thread still runs on the pool's real thread.
 
 **What 4.8 YAML or code must change:** nothing.
+
+### A step that names the workflow's own actor does not wait for that actor's mailbox
+
+Commit `03172d3`.
+
+Up to 4.8.0, `setCurrentState`, `readYaml`, `execCode`, `runUntilEnd`, `call`, `runWorkflow` and `apply` sent themselves to their own actor and waited. A workflow runs inside one message of its actor, and the actor takes its next message only when that one has ended, so a step that named the workflow's own actor (`actor: this`, `.`, its own name, `../<own name>`, or a `../` pattern matching it) waited for ever. Two common cases hung: a parent running a child with `actor: child, method: runUntilEnd` whose steps call `this.setCurrentState`, `this.readYaml` or `this.call`; and a workflow run as its own actor's message, as chat-ui's `Project.run` does.
+
+Now such a step is the actor's own step: these actions do the interpreter's work directly. A call from another actor, such as a parent's `actor: child`, still goes through the actor's mailbox. `OwnStepDispatchTest`, `OwnStepMatrixTest` (every action, every way to name the actor, every way to start a workflow), `OwnStepMailboxRuleTest` and `OwnStepThreadsTest` pin this.
+
+**What 4.8 YAML or code must change:** nothing; workflows that hung now run.
+
+### `apply` runs on the interpreter's mailbox virtual thread, its children in parallel, each in its own turn
+
+Commits `ccbd70f`, `bf8b491`, `c73b284`. New `@Action(orchestrates = true)`, `ExecutionMode.MAILBOX` (`execution: mailbox`).
+
+Up to 4.8.0 a plain `this.apply` step ran on a real thread of the `ManagedThreadPool`, and its children ran one after another on that thread. Now:
+
+- An action declared `@Action(orchestrates = true)` (as `apply` is) runs, when its step gives no `execution` key, on the interpreter's mailbox virtual thread, and waits there while its children run in parallel on the pool's real threads. An explicit `execution:` key still wins.
+- Each child's work is taken in that child's turn, through its receive loop (POJO-actor 5.0.0), and may run on any of the pool's real threads; a real thread of the pool that waits for a child's answer runs queued pool work meanwhile.
+- `apply` called by another actor (not by the workflow's own step) runs in this actor's turn, on its mailbox virtual thread; before, it ran on the caller's thread even while another message of this actor was running.
+
+**What 4.8 YAML or code must change:** nothing for workflows. Children of one `apply` may now run at the same time; a child that shared state with its siblings without its own guard has to be checked.
+
+### Expressions: `actors.get` reads an actor's result and state only; an allow-list can limit expressions
+
+Commits `6975434`, `5c9e027`, `4735289`; `commons-jexl3` 3.7.1.
+
+- `actors.get(name)` in an expression answers a view with two readers, `.result` (the actor's last result) and `.state`, not the object the actor wraps. An expression can no longer call a method of another actor's object, the loader's included. A missing name answers `null`; `actors.get` no longer creates an actor (`out`, `parallel-map`, a factory name), and `actors.has(name)` says whether it would find one.
+- A host that runs workflows it does not trust can limit `jexl:` expressions to an allow-list of reader methods (no `new`, assignment, loops or static calls): `IIActorSystem.setExpressionAllowListEnabled(true)`, or `run --expression-allow-list`. It is off by default; then an expression has the full reach of Java, since a workflow is a program and the person who writes it may use what Java can do.
+- The loader is reached only by a step that names it (`actor: loader`). A host that registers a loader trusts every workflow it runs; a host that runs workflows it does not trust registers none.
+
+**What 4.8 YAML must change:** an expression that called a method of another actor's object through `actors.get(...)` reads `actors.get(...).result` or `.state` instead, or becomes a step that calls the actor's action.
 
 ### `requestStop()` wakes a run paused at a breakpoint
 
