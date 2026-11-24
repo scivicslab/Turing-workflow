@@ -58,8 +58,10 @@ import org.junit.jupiter.api.Test;
  *       statement without {@code .executor(}.</li>
  * </ul>
  * <p>{@code Executors.newVirtualThreadPerTaskExecutor()} and {@code Thread.ofVirtual()} make
- * virtual threads and are allowed. The exemptions are listed in {@link #EXEMPT}, each with its
- * reason; nothing else is exempted.</p>
+ * virtual threads and are allowed, and so is an {@code Executors} pool whose own arguments build its
+ * thread factory with {@code Thread.ofVirtual()}: every thread of that pool is a virtual thread. A pool
+ * given a factory built anywhere else is reported, since this test cannot tell what that factory makes.
+ * The exemptions are listed in {@link #EXEMPT}, each with its reason; nothing else is exempted.</p>
  */
 @DisplayName("src/main/java makes no real thread outside the ManagedThreadPool")
 class RealThreadsOnlyInManagedThreadPoolGuardTest {
@@ -76,12 +78,7 @@ class RealThreadsOnlyInManagedThreadPoolGuardTest {
         // Runtime.addShutdownHook takes an unstarted Thread object, which the JDK starts at exit; there
         // is no other way to register a shutdown hook.
         new Exemption("/LogServeCLI.java", "addShutdownHook(new Thread(",
-            "a shutdown hook, which the JDK requires as a Thread object"),
-        // The WorkflowScheduler's tick pool is built with a virtual-thread factory (Thread.ofVirtual()),
-        // so none of its threads is a real thread; the pattern only sees the pool method's name.
-        new Exemption("/com/scivicslab/turingworkflow/workflow/scheduler/WorkflowScheduler.java",
-            "newScheduledThreadPool(",
-            "a scheduled pool whose thread factory makes virtual threads only"));
+            "a shutdown hook, which the JDK requires as a Thread object"));
 
     @Test
     @DisplayName("no real thread pool, commonPool use, hand-started real thread or HttpClient without an executor")
@@ -127,6 +124,7 @@ class RealThreadsOnlyInManagedThreadPoolGuardTest {
         static final Pattern ASYNC = Pattern.compile("\\b(\\w+Async)\\s*\\(");
         static final Pattern HTTP_BUILDER = Pattern.compile("\\bHttpClient\\s*\\.\\s*newBuilder\\s*\\(");
         static final Pattern EXECUTOR_CALL = Pattern.compile("\\.\\s*executor\\s*\\(");
+        static final Pattern VIRTUAL_FACTORY = Pattern.compile("\\bThread\\s*\\.\\s*ofVirtual\\s*\\(");
 
         private RealThreadScan() {
         }
@@ -159,6 +157,10 @@ class RealThreadsOnlyInManagedThreadPoolGuardTest {
             for (Rule rule : RULES) {
                 Matcher m = rule.pattern().matcher(code);
                 while (m.find()) {
+                    if (rule == RULES.get(0) && VIRTUAL_FACTORY.matcher(
+                            code.substring(m.end() - 1, statementEnd(code, m.end(), 1))).find()) {
+                        continue;  // an Executors pool given Thread.ofVirtual()'s factory: virtual threads only
+                    }
                     offsets.add(m.start());
                     what.add(rule.what() + ": " + m.group().replaceAll("\\s+", " ").trim());
                 }
@@ -184,7 +186,7 @@ class RealThreadsOnlyInManagedThreadPoolGuardTest {
             }
             Matcher builder = HTTP_BUILDER.matcher(code);
             while (builder.find()) {
-                int end = statementEnd(code, builder.end());
+                int end = statementEnd(code, builder.end(), 1);   // the match ends just after the '(' of newBuilder(
                 if (!EXECUTOR_CALL.matcher(code.substring(builder.start(), end)).find()) {
                     offsets.add(builder.start());
                     what.add("HttpClient.newBuilder() without .executor(: an HttpClient on a pool of real threads of its own");
@@ -225,8 +227,7 @@ class RealThreadsOnlyInManagedThreadPoolGuardTest {
         }
 
         /** The offset of the {@code ;} that ends the statement the code at {@code from} is in. */
-        private static int statementEnd(String code, int from) {
-            int depth = 0;
+        private static int statementEnd(String code, int from, int depth) {
             for (int i = from; i < code.length(); i++) {
                 char c = code.charAt(i);
                 if (c == '(' || c == '[' || c == '{') {
