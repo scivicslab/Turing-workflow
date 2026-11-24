@@ -247,6 +247,13 @@ public class Interpreter {
      * <p>Supports both legacy {@code argument} (String) and new {@code arguments} (List/Map) formats.
      * If {@code arguments} is present, it is converted to JSON array format before passing to the actor.</p>
      *
+     * <p>A step whose target resolves to the actor that runs this workflow ({@code actor: this}, or
+     * any other path that resolves to that actor) is that actor's own step: the action does the
+     * interpreter's work directly and never sends itself to that actor's mailbox and waits. The
+     * workflow runs inside one message of that actor, so a wait for the actor's next message would
+     * never end. A step that names another actor goes through that actor's mailbox. See
+     * {@link InterpreterIIAR} and {@code OwnStepMatrixTest}.</p>
+     *
      * @return an {@link ActionResult} indicating success or failure
      */
     private static final String CLASS_NAME = Interpreter.class.getName();

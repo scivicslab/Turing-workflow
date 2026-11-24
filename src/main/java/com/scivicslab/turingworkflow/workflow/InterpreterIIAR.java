@@ -226,7 +226,23 @@ public class InterpreterIIAR extends IIActorRef<Interpreter> {
      */
     @Action(value = "apply", orchestrates = true)
     public ActionResult apply(String args) {
-        return this.object.apply(args);
+        if (isOwnStep()) {
+            // Inside the message that runs this actor's workflow: already this actor's turn.
+            return this.object.apply(args);
+        }
+        // Another actor's call: in this actor's turn, on its mailbox virtual thread, so the children
+        // still run in parallel on the pool's real threads while apply waits there.
+        try {
+            return this.ask((Interpreter i) -> i.apply(args)).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.log(Level.SEVERE, String.format("actionName = apply, args = %s", args), e);
+            return ActionResult.error(e, getName() + ".apply");
+        } catch (ExecutionException e) {
+            ActionResult.rethrowIfFatal(e);
+            logger.log(Level.SEVERE, String.format("actionName = apply, args = %s", args), e);
+            return ActionResult.error(e, getName() + ".apply");
+        }
     }
 
     /**

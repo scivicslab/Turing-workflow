@@ -1,0 +1,7 @@
+name: t795-to-parent
+steps:
+  - states: ["0", "end"]
+    actions:
+      - actor: ".."
+        method: setCurrentState
+        arguments: "viaSubWorkflow"
