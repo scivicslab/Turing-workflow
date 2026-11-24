@@ -77,6 +77,7 @@ class ApplyThreadsTest {
         final List<ChildRun> runs = new CopyOnWriteArrayList<>();
         final AtomicInteger running = new AtomicInteger();
         final AtomicInteger mostAtOnce = new AtomicInteger();
+        final List<IIActorRef<Object>> children = new CopyOnWriteArrayList<>();
 
         Parent(String name, int children, CyclicBarrier together) {
             interpreter = new Interpreter.Builder().loggerName(name).team(system).build();
@@ -110,6 +111,7 @@ class ApplyThreadsTest {
                     }
                 }
             };
+            children.add(child);
             child.setParentName(ref.getName());
             ref.getNamesOfChildren().add(childName);
             system.addIIActor(child);
@@ -169,24 +171,51 @@ class ApplyThreadsTest {
     }
 
     @Test
-    @DisplayName("on a pool real thread: apply ends, and every child runs on a pool real thread")
-    void fromPoolRealThread() {
+    @DisplayName("on a pool real thread: each child's work runs in that child's turn, on a pool real thread")
+    void fromPoolRealThread() throws Exception {
         system = new IIActorSystem("apply-from-pool", 2);
         Parent parent = new Parent("main", 3, null);
+        IIActorRef<Object> held = parent.children.get(1);
         AtomicReference<Thread> applying = new AtomicReference<>();
 
-        ActionResult result = assertTimeoutPreemptively(LIMIT, () -> parent.ref.ask(i -> {
+        // Another message holds main-child-1's turn: its mailbox virtual thread is inside it.
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        held.ask(o -> {
+            holding.countDown();
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        });
+        assertTrue(holding.await(10, TimeUnit.SECONDS), "main-child-1's turn is held");
+
+        CompletableFuture<ActionResult> applied = parent.ref.ask(i -> {
             applying.set(Thread.currentThread());
             return i.apply(parent.applyAll());
-        }, system.getManagedThreadPool()).get());
+        }, system.getManagedThreadPool());
+
+        // The other two children run; main-child-1's work waits for its turn instead of entering the
+        // object while another message is inside it.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (parent.runs.size() < 2 && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        Thread.sleep(300);
+        assertEquals(2, parent.runs.size(), "only the two children whose turn is free have run: " + parent.runs);
+        assertTrue(parent.runs.stream().noneMatch(r -> r.child().equals(held.getName())),
+            "main-child-1 ran while another message held its turn: " + parent.runs);
+        assertFalse(applied.isDone(), "apply waits for main-child-1");
+
+        release.countDown();
+        ActionResult result = assertTimeoutPreemptively(LIMIT, () -> applied.get());
 
         assertTrue(result.isSuccess(), result.getResult());
         assertEquals("Applied to 3 actors", result.getResult());
-        assertFalse(applying.get().isVirtual());
+        assertFalse(applying.get().isVirtual(), "apply ran on " + applying.get());
         assertEquals(3, parent.runs.size());
-        // A child's message is queued and taken in its actor's turn (tell/ask with a ManagedThreadPool). The
-        // waiting pool real thread helps the pool while it waits, but another idle real thread may run a
-        // child as well, so which pool real thread runs which child is not fixed.
         for (ChildRun run : parent.runs) {
             assertTrue(run.onPoolRealThread(), run.child() + " ran on " + run.thread());
         }
